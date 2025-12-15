@@ -1,0 +1,37 @@
+# Clippy configuration for enhanced linting
+
+# The maximum allowed size for arrays on the stack
+array-size-threshold = 512000
+
+# The maximum allowed cyclomatic complexity
+cognitive-complexity-threshold = 30
+
+# The maximum allowed size of an enum's variant to suggest boxing it
+enum-variant-size-threshold = 200
+
+# The maximum allowed size of a literal
+literal-representation-threshold = 10000
+
+# The maximum allowed size of a type
+too-many-arguments-threshold = 7
+
+# The maximum allowed size of a type's name
+type-complexity-threshold = 250
+
+# The maximum allowed size of a function
+too-many-lines-threshold = 100
+
+# The maximum allowed size of a struct
+trivial-copy-size-limit = 128
+
+# Avoid false positives
+avoid-breaking-exported-api = false
+
+# Check for missing documentation
+missing-docs-in-crate-items = false
+
+# Allow certain lints that might be too strict for this project
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true

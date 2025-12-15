@@ -1,0 +1,24 @@
+[package]
+name = "process-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
+
+# Platform-specific dependencies
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["processthreadsapi", "jobapi2", "handleapi", "synchapi", "winbase"] }
+
+[dev-dependencies]
+tracing-subscriber = "0.3"
+
+[[example]]
+name = "basic_usage"
+path = "../examples/basic_usage.rs"
