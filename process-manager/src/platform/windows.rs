@@ -1,5 +1,3 @@
-//! Windows-specific process management implementation
-
 use crate::{
     platform::{PlatformManager, PlatformProcess},
     PlatformError, ProcessConfig, ProcessManagerError, ProcessStatus,

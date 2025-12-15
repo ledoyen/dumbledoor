@@ -28,7 +28,7 @@ This is the initial project structure. Core functionality will be implemented in
 
 ## Requirements
 
-- Rust 1.70+
+- Rust 1.92+
 - Platform-specific dependencies are handled automatically
 
 ## Development

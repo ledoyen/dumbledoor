@@ -411,6 +411,11 @@ pub enum PlatformError {
 3. **Cleanup Guarantees**: Errors during cleanup are logged but don't prevent other processes from being cleaned up
 4. **Platform Fallbacks**: If advanced platform features fail, fall back to basic POSIX/Windows APIs
 
+## Crates structure
+
+Avoid flat crates, use nested crates when needed, especially to hide implementation details.
+Group struct traits and functions by feature crates, not by technical crates.
+
 ## Testing Strategy
 
 The testing approach focuses on unit testing and integration testing:
@@ -450,7 +455,7 @@ Custom generators for:
 ### Platform-Specific Considerations
 
 **Linux:**
-- Prefer user namespaces when available (requires CAP_SYS_ADMIN or unprivileged user namespaces)
+- Prefer user namespaces when available (requires unprivileged user namespaces)
 - Fall back to process groups and signal handling
 - Handle cgroup integration for resource management
 

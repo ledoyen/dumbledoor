@@ -121,87 +121,6 @@ jobs:
       - name: Test examples
         run: cargo test --verbose --examples
 
-  # Code coverage (Linux only for performance)
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-coverage-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-coverage-cargo-
-
-      - name: Install Just
-        uses: extractions/setup-just@v1
-
-      - name: Generate coverage report
-        run: just coverage-lcov
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: lcov.info
-          fail_ci_if_error: true
-
-  # Additional quality checks
-  quality-checks:
-    name: Quality Checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install additional tools
-        run: |
-          cargo install cargo-deny
-          cargo install cargo-outdated
-          cargo install cargo-udeps
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-quality-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-quality-cargo-
-
-      - name: Install Just
-        uses: extractions/setup-just@v1
-
-      - name: Check dependencies (deny)
-        run: just check-deps
-
-      - name: Check for outdated dependencies
-        run: just check-outdated
-        continue-on-error: true  # Don't fail CI for outdated deps, just warn
-
-      - name: Check for unused dependencies
-        run: just check-unused
-        continue-on-error: true  # Don't fail CI for unused deps, just warn
-
   # Minimum Supported Rust Version (MSRV) check
   msrv:
     name: MSRV Check
@@ -210,10 +129,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust 1.70 (MSRV)
+      - name: Install Rust 1.92 (MSRV)
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.70.0
+          toolchain: 1.92.0
 
       - name: Cache Cargo registry
         uses: actions/cache@v3

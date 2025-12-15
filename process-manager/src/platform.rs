@@ -4,6 +4,15 @@ use crate::{PlatformError, ProcessConfig, ProcessManagerError, ProcessStatus};
 use std::fmt::Debug;
 use std::sync::Arc;
 
+#[cfg(target_os = "linux")]
+mod linux;
+
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "windows")]
+mod windows;
+
 /// Platform-specific process representation
 pub trait PlatformProcess: Debug + Send + Sync {
     /// Get the process ID
@@ -49,17 +58,17 @@ pub trait PlatformManager: Send + Sync {
 pub fn create_platform_manager() -> Result<Arc<dyn PlatformManager>, ProcessManagerError> {
     #[cfg(target_os = "linux")]
     {
-        Ok(Arc::new(crate::linux::LinuxPlatformManager::new()?))
+        Ok(Arc::new(crate::platform::linux::LinuxPlatformManager::new()?))
     }
 
     #[cfg(target_os = "macos")]
     {
-        Ok(Arc::new(crate::macos::MacOSPlatformManager::new()?))
+        Ok(Arc::new(crate::platform::macos::MacOSPlatformManager::new()?))
     }
 
     #[cfg(target_os = "windows")]
     {
-        Ok(Arc::new(crate::windows::WindowsPlatformManager::new()?))
+        Ok(Arc::new(crate::platform::windows::WindowsPlatformManager::new()?))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

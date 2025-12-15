@@ -83,7 +83,7 @@ test-unit:
 
 # Check MSRV compatibility
 check-msrv:
-    cargo +1.70.0 check --all-targets
+    cargo +1.92.0 check --all-targets
 
 # Generate coverage report in lcov format for CI
 coverage-lcov:
