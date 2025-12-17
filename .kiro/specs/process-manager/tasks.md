@@ -13,7 +13,12 @@
   - Set up platform-specific module structure (linux, macos, windows)
   - _Requirements: 1.1, 2.1, 8.1_
 
-- [ ] 2. Implement core data models and error types
+- [x] 2. Implement core data models and error types
+
+
+
+
+
   - Implement ProcessConfig struct with validation
   - Implement ProcessHandle using UUID
   - Implement ProcessStatus enum with all states including RunningDetached
