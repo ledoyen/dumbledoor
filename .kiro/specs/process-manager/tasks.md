@@ -100,7 +100,13 @@
   - Handle Windows-specific path and environment handling
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 4.3, 8.5_
 
-- [ ]* 6.1 Write unit tests for Windows platform manager
+- [x] 6.1 Write unit tests for Windows platform manager
+
+
+
+
+
+
   - Test Job Object creation and management
   - Test Windows process termination
   - Test environment and working directory isolation
