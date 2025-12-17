@@ -14,7 +14,7 @@ tokio = { workspace = true }
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["processthreadsapi", "jobapi2", "handleapi", "synchapi", "winbase", "winerror"] }
+unsafe-windows-process = { path = "../unsafe-windows-process" }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"

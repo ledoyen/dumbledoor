@@ -1,5 +1,5 @@
 [workspace]
-members = ["process-manager"]
+members = ["process-manager", "unsafe-windows-process"]
 resolver = "2"
 
 [workspace.dependencies]

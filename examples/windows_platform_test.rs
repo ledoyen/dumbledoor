@@ -1,7 +1,7 @@
 //! Direct test of Windows platform manager functionality
 
 #[cfg(target_os = "windows")]
-use process_manager::{ProcessConfig, platform::windows::WindowsPlatformManager, platform::PlatformManager};
+use process_manager::{ProcessConfig, platform::windows_safe::WindowsPlatformManager, platform::PlatformManager};
 #[cfg(target_os = "windows")]
 use std::collections::HashMap;
 

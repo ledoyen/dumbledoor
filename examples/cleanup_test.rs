@@ -1,7 +1,7 @@
 //! Test Windows platform manager cleanup functionality
 
 #[cfg(target_os = "windows")]
-use process_manager::{ProcessConfig, platform::windows::WindowsPlatformManager, platform::PlatformManager};
+use process_manager::{ProcessConfig, platform::windows_safe::WindowsPlatformManager, platform::PlatformManager};
 #[cfg(target_os = "windows")]
 use std::collections::HashMap;
 
@@ -44,7 +44,7 @@ fn spawn_long_running_process() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check that all processes are running
     for (i, process) in processes.iter().enumerate() {
-        let status = manager.query_process_status(process.as_ref())?;
+        let status = manager.query_process_status(process.as_ref() as &dyn process_manager::platform::PlatformProcess)?;
         println!("Process {} status: {:?}", i + 1, status);
     }
 

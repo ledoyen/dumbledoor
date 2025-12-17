@@ -11,7 +11,7 @@ pub mod linux;
 pub mod macos;
 
 #[cfg(target_os = "windows")]
-pub mod windows;
+pub mod windows_safe;
 
 /// Platform-specific process representation
 pub trait PlatformProcess: Debug + Send + Sync {
@@ -68,7 +68,7 @@ pub fn create_platform_manager() -> Result<Arc<dyn PlatformManager>, ProcessMana
 
     #[cfg(target_os = "windows")]
     {
-        Ok(Arc::new(crate::platform::windows::WindowsPlatformManager::new()?))
+        Ok(Arc::new(crate::platform::windows_safe::WindowsPlatformManager::new()?))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
