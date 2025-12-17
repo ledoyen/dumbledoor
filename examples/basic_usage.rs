@@ -10,10 +10,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manager = ProcessManager::new()?;
 
     // Create a process configuration
+    #[cfg(target_os = "windows")]
+    let config = ProcessConfig::new("cmd")
+        .args(["/C", "echo", "Hello", "World"])
+        .env("TEST_VAR", "test_value")
+        .working_directory("C:\\Windows\\Temp");
+
+    #[cfg(unix)]
     let config = ProcessConfig::new("/bin/echo")
         .args(["Hello", "World"])
         .env("TEST_VAR", "test_value")
         .working_directory("/tmp");
+
+    #[cfg(not(any(target_os = "windows", unix)))]
+    let config = {
+        println!("⚠ Unsupported platform: {}", std::env::consts::OS);
+        return Err("Unsupported platform".into());
+    };
 
     // Start the process
     let handle = manager.start_process(config)?;

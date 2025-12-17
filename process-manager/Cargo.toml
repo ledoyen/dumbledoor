@@ -14,7 +14,7 @@ tokio = { workspace = true }
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["processthreadsapi", "jobapi2", "handleapi", "synchapi", "winbase"] }
+winapi = { version = "0.3", features = ["processthreadsapi", "jobapi2", "handleapi", "synchapi", "winbase", "winerror"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
@@ -22,3 +22,19 @@ tracing-subscriber = "0.3"
 [[example]]
 name = "basic_usage"
 path = "../examples/basic_usage.rs"
+
+[[example]]
+name = "windows_platform_test"
+path = "../examples/windows_platform_test.rs"
+
+[[example]]
+name = "cleanup_test"
+path = "../examples/cleanup_test.rs"
+
+[[example]]
+name = "controlled_cleanup_test"
+path = "../examples/controlled_cleanup_test.rs"
+
+[[example]]
+name = "platform_check"
+path = "../examples/platform_check.rs"

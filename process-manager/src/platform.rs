@@ -5,13 +5,13 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 #[cfg(target_os = "linux")]
-mod linux;
+pub mod linux;
 
 #[cfg(target_os = "macos")]
-mod macos;
+pub mod macos;
 
 #[cfg(target_os = "windows")]
-mod windows;
+pub mod windows;
 
 /// Platform-specific process representation
 pub trait PlatformProcess: Debug + Send + Sync {
