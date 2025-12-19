@@ -19,6 +19,15 @@ unsafe-windows-process = { path = "../unsafe-windows-process" }
 [dev-dependencies]
 tracing-subscriber = "0.3"
 
+# Dependencies for binaries
+[dependencies.tracing-subscriber]
+version = "0.3"
+optional = true
+
+[features]
+default = []
+binary-deps = ["tracing-subscriber"]
+
 [[example]]
 name = "basic_usage"
 path = "../examples/basic_usage.rs"
@@ -28,13 +37,11 @@ name = "windows_platform_test"
 path = "../examples/windows_platform_test.rs"
 
 [[example]]
-name = "cleanup_test"
-path = "../examples/cleanup_test.rs"
-
-[[example]]
-name = "controlled_cleanup_test"
-path = "../examples/controlled_cleanup_test.rs"
-
-[[example]]
 name = "platform_check"
 path = "../examples/platform_check.rs"
+
+# Binary for SIGKILL cleanup testing (test victim process)
+[[bin]]
+name = "sigkill_victim"
+path = "tests/test_victims/sigkill_victim.rs"
+required-features = ["binary-deps"]

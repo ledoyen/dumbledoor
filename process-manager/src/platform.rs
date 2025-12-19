@@ -14,12 +14,14 @@ pub mod macos;
 pub mod windows_safe;
 
 /// Platform-specific process representation
+#[allow(dead_code)]
 pub trait PlatformProcess: Debug + Send + Sync {
     /// Get the process ID
     fn pid(&self) -> u32;
 }
 
 /// Platform-specific process management trait
+#[allow(dead_code)]
 pub trait PlatformManager: Send + Sync {
     /// Spawn a new process with the given configuration
     fn spawn_process(

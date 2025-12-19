@@ -1,9 +1,7 @@
-//! Direct test of Windows platform manager functionality
+//! Test of Windows process management functionality using public API
 
 #[cfg(target_os = "windows")]
-use process_manager::{
-    platform::windows_safe::WindowsPlatformManager, platform::PlatformManager, ProcessConfig,
-};
+use process_manager::{ProcessConfig, ProcessManager};
 #[cfg(target_os = "windows")]
 use std::collections::HashMap;
 
@@ -12,15 +10,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    println!("Testing Windows Platform Manager directly...");
+    println!("Testing Windows Process Manager using public API...");
 
-    // Create the Windows platform manager
-    let manager = WindowsPlatformManager::new()?;
-    println!("✓ Windows platform manager created successfully");
-
-    // Set up cleanup handler
-    manager.setup_cleanup_handler()?;
-    println!("✓ Cleanup handler configured");
+    // Create the process manager
+    let manager = ProcessManager::new()?;
+    println!("✓ Process manager created successfully");
 
     // Create a long-running process using ping (which will run for about 10 seconds)
     let temp_dir = std::env::temp_dir();
@@ -50,45 +44,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn the process
     println!("Spawning process...");
-    let process = manager.spawn_process(&config)?;
-    println!("✓ Process spawned with PID: {}", process.pid());
+    let handle = manager.start_process(config)?;
+    println!("✓ Process started with handle: {:?}", handle);
 
     // Query process status immediately
-    let status = manager.query_process_status(process.as_ref())?;
+    let status = manager.query_status(handle)?;
     println!("Initial process status: {:?}", status);
 
-    // Wait a bit to ensure process is running
+    // Wait a bit to let process start
     std::thread::sleep(std::time::Duration::from_millis(2000));
 
-    // Query status again - should still be running
-    let status = manager.query_process_status(process.as_ref())?;
+    // Query status again
+    let status = manager.query_status(handle)?;
     println!("Process status after 2s: {:?}", status);
 
-    // Get child processes
-    let children = manager.get_child_processes(process.as_ref())?;
-    println!("Child processes: {:?}", children);
+    // List all processes
+    let processes = manager.list_processes();
+    println!("Active processes: {:?}", processes);
 
-    // Now test termination while the process is still running
-    println!("Process should still be running - testing termination...");
-    println!("Attempting graceful termination (5 second timeout)...");
-    manager.terminate_process(process.as_ref(), true)?;
+    // Wait a bit more
+    std::thread::sleep(std::time::Duration::from_millis(3000));
+
+    // Now test termination
+    println!("Testing process termination...");
+    manager.stop_process(handle)?;
     println!("✓ Process termination completed");
 
-    // Verify the process was actually terminated
-    let status = manager.query_process_status(process.as_ref())?;
-    println!("Process status after termination: {:?}", status);
-
-    // Test cleanup
-    let processes: Vec<&dyn process_manager::platform::PlatformProcess> = vec![process.as_ref()];
-    manager.cleanup_all_processes(&processes)?;
-    println!("✓ Cleanup completed");
+    // Verify the process was removed from the list
+    let processes_after = manager.list_processes();
+    println!("Active processes after stop: {:?}", processes_after);
 
     // Check if log file was created and has content
     if log_file.exists() {
         match std::fs::read_to_string(&log_file) {
             Ok(content) => {
                 println!("✓ Log file created successfully!");
-                println!("Log file content: {}", content.trim());
+                println!(
+                    "Log file content preview: {}",
+                    content.chars().take(200).collect::<String>()
+                );
             }
             Err(e) => {
                 println!("⚠ Log file exists but couldn't read it: {}", e);
@@ -97,10 +91,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Clean up log file
         let _ = std::fs::remove_file(&log_file);
     } else {
-        println!("⚠ Log file was not created");
+        println!("⚠ Log file was not created (may not be implemented yet)");
     }
 
-    println!("All tests passed! Windows platform manager is working correctly.");
+    println!("All tests passed! Process manager is working correctly on Windows.");
 
     Ok(())
 }

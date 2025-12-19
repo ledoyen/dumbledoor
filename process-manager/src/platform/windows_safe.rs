@@ -13,6 +13,7 @@ use unsafe_windows_process::{
 };
 
 /// Windows-specific process representation using safe wrappers
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct WindowsProcess {
     pid: u32,
@@ -25,6 +26,7 @@ impl PlatformProcess for WindowsProcess {
 }
 
 /// Windows platform manager using safe wrappers over unsafe operations
+#[allow(dead_code)]
 pub struct WindowsPlatformManager {
     #[cfg(windows)]
     job_object: WindowsJobObject,
@@ -63,6 +65,7 @@ impl WindowsPlatformManager {
     }
 
     /// Build command line string from command and arguments
+    #[allow(dead_code)]
     fn build_command_line(config: &ProcessConfig) -> String {
         let mut cmd_line = String::new();
 
@@ -94,6 +97,7 @@ impl WindowsPlatformManager {
 
     /// Build environment block from environment variables
     #[cfg(windows)]
+    #[allow(dead_code)]
     fn build_environment_block(env: &HashMap<String, String>) -> Option<Vec<u16>> {
         if env.is_empty() {
             return None;
@@ -112,12 +116,14 @@ impl WindowsPlatformManager {
     }
 
     /// Get the default working directory (system root)
+    #[allow(dead_code)]
     fn get_default_working_directory() -> String {
         std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string())
     }
 
     /// Convert unsafe Windows error to platform error
     #[cfg(windows)]
+    #[allow(dead_code)]
     fn convert_error(error: UnsafeWindowsError) -> PlatformError {
         match error {
             UnsafeWindowsError::SystemCallFailed { syscall, errno } => {

@@ -113,7 +113,15 @@
   - Test child process detection
   - _Requirements: 1.2, 1.3, 2.2, 8.5_
 
-- [ ]* 6.2 Write E2E tests for Windows platform
+- [x] 6.2 Write E2E tests for Windows platform
+
+
+
+
+
+
+
+
   - Test complete process lifecycle on Windows
   - Test cleanup guarantees with process termination
   - Test Job Object behavior

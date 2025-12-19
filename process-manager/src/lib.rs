@@ -13,14 +13,14 @@ pub use uuid::Uuid;
 // Core modules
 pub mod cleanup;
 pub mod error;
-pub mod platform;
+mod platform;
 pub mod plugin;
 pub mod reaper;
 
 // Re-export core types
 pub use cleanup::CleanupHandler;
 pub use error::{PlatformError, ProcessManagerError};
-pub use platform::PlatformManager;
+use platform::PlatformManager;
 pub use plugin::{ConfigurationPlugin, PluginRegistry};
 pub use reaper::{ProcessReaper, ReaperMonitor};
 
