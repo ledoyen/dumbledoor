@@ -3,10 +3,10 @@ use crate::{
     PlatformError, ProcessConfig, ProcessManagerError, ProcessStatus,
 };
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 /// Linux-specific process representation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LinuxProcess {
     pid: u32,
     // Additional Linux-specific process state will be added in later tasks
@@ -19,11 +19,12 @@ impl PlatformProcess for LinuxProcess {
 }
 
 /// Linux platform manager using user namespaces when available
+#[derive(Clone)]
 pub struct LinuxPlatformManager {
     use_namespaces: bool,
     namespace_fd: Option<i32>,
     needs_reaper: bool,
-    process_state: RwLock<HashMap<u32, LinuxProcessState>>,
+    process_state: Arc<RwLock<HashMap<u32, LinuxProcessState>>>,
 }
 
 #[derive(Debug)]
@@ -48,16 +49,15 @@ impl LinuxPlatformManager {
             use_namespaces,
             namespace_fd: None,
             needs_reaper,
-            process_state: RwLock::new(HashMap::new()),
+            process_state: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 }
 
 impl PlatformManager for LinuxPlatformManager {
-    fn spawn_process(
-        &self,
-        config: &ProcessConfig,
-    ) -> Result<Box<dyn PlatformProcess>, PlatformError> {
+    type Process = LinuxProcess;
+
+    fn spawn_process(&self, config: &ProcessConfig) -> Result<Self::Process, PlatformError> {
         // TODO: Implement Linux process spawning with user namespaces
         tracing::info!("Spawning Linux process: {:?}", config.command);
 
@@ -65,12 +65,12 @@ impl PlatformManager for LinuxPlatformManager {
             pid: 12345, // Placeholder PID
         };
 
-        Ok(Box::new(process))
+        Ok(process)
     }
 
     fn terminate_process(
         &self,
-        process: &dyn PlatformProcess,
+        process: &Self::Process,
         graceful: bool,
     ) -> Result<(), PlatformError> {
         // TODO: Implement Linux process termination
@@ -84,7 +84,7 @@ impl PlatformManager for LinuxPlatformManager {
 
     fn query_process_status(
         &self,
-        process: &dyn PlatformProcess,
+        process: &Self::Process,
     ) -> Result<ProcessStatus, PlatformError> {
         // TODO: Implement Linux process status querying
         Ok(ProcessStatus::Running { pid: process.pid() })
@@ -96,19 +96,13 @@ impl PlatformManager for LinuxPlatformManager {
         Ok(())
     }
 
-    fn cleanup_all_processes(
-        &self,
-        processes: &[&dyn PlatformProcess],
-    ) -> Result<(), PlatformError> {
+    fn cleanup_all_processes(&self, processes: &[&Self::Process]) -> Result<(), PlatformError> {
         // TODO: Implement Linux cleanup
         tracing::info!("Cleaning up {} Linux processes", processes.len());
         Ok(())
     }
 
-    fn get_child_processes(
-        &self,
-        process: &dyn PlatformProcess,
-    ) -> Result<Vec<u32>, PlatformError> {
+    fn get_child_processes(&self, process: &Self::Process) -> Result<Vec<u32>, PlatformError> {
         // TODO: Implement child process detection on Linux
         tracing::debug!(
             "Getting child processes for Linux process {}",

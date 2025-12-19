@@ -14,11 +14,25 @@ A cross-platform Rust library for reliable process lifecycle management with gua
 - **Guaranteed cleanup**: All spawned processes are terminated when the main program exits
 - **Plugin system**: Extensible configuration enhancement for environment managers
 - **Thread-safe**: Safe for use in multi-threaded environments
+- **100% Safe Rust**: Contains zero unsafe code blocks - all unsafe operations delegated to dedicated crates
 
 **Platform-Specific Features:**
 - **Linux**: User namespaces for automatic cleanup (with fallback to process groups)
 - **macOS**: POSIX process groups with signal-based cleanup
-- **Windows**: Job Objects for automatic process tree cleanup
+- **Windows**: Job Objects for automatic process tree cleanup (via `unsafe-windows-process` crate)
+
+### unsafe-windows-process
+
+A dedicated crate containing **ALL** unsafe Windows API interactions for process management. This crate is the **ONLY** location where unsafe code exists in the workspace.
+
+**Safety Architecture:**
+- **Complete isolation**: ALL unsafe operations are contained within this crate
+- **Safe public API**: Provides safe wrappers around unsafe Windows APIs
+- **Documented safety**: Every unsafe block is thoroughly documented with safety justifications
+- **Minimal surface area**: Only exposes the minimum necessary functionality
+- **Single responsibility**: Sole purpose is to safely wrap Windows APIs
+
+**Safety Guarantee**: The `process-manager` crate contains zero unsafe code and relies entirely on safe abstractions provided by this crate.
 
 *More crates will be added to this workspace as the project grows.*
 

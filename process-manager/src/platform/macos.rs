@@ -3,10 +3,10 @@ use crate::{
     PlatformError, ProcessConfig, ProcessManagerError, ProcessStatus,
 };
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 /// macOS-specific process representation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MacOSProcess {
     pid: u32,
     pgid: i32, // Process group ID
@@ -19,8 +19,9 @@ impl PlatformProcess for MacOSProcess {
 }
 
 /// macOS platform manager using process groups
+#[derive(Clone)]
 pub struct MacOSPlatformManager {
-    process_groups: RwLock<HashMap<u32, i32>>, // pid -> pgid mapping
+    process_groups: Arc<RwLock<HashMap<u32, i32>>>, // pid -> pgid mapping
 }
 
 impl MacOSPlatformManager {
@@ -29,16 +30,15 @@ impl MacOSPlatformManager {
         tracing::info!("macOS platform manager initialized");
 
         Ok(Self {
-            process_groups: RwLock::new(HashMap::new()),
+            process_groups: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 }
 
 impl PlatformManager for MacOSPlatformManager {
-    fn spawn_process(
-        &self,
-        config: &ProcessConfig,
-    ) -> Result<Box<dyn PlatformProcess>, PlatformError> {
+    type Process = MacOSProcess;
+
+    fn spawn_process(&self, config: &ProcessConfig) -> Result<Self::Process, PlatformError> {
         // TODO: Implement macOS process spawning with process groups
         tracing::info!("Spawning macOS process: {:?}", config.command);
 
@@ -47,12 +47,12 @@ impl PlatformManager for MacOSPlatformManager {
             pgid: -1,   // Placeholder PGID
         };
 
-        Ok(Box::new(process))
+        Ok(process)
     }
 
     fn terminate_process(
         &self,
-        process: &dyn PlatformProcess,
+        process: &Self::Process,
         graceful: bool,
     ) -> Result<(), PlatformError> {
         // TODO: Implement macOS process termination with signals
@@ -66,7 +66,7 @@ impl PlatformManager for MacOSPlatformManager {
 
     fn query_process_status(
         &self,
-        process: &dyn PlatformProcess,
+        process: &Self::Process,
     ) -> Result<ProcessStatus, PlatformError> {
         // TODO: Implement macOS process status querying
         Ok(ProcessStatus::Running { pid: process.pid() })
@@ -78,19 +78,13 @@ impl PlatformManager for MacOSPlatformManager {
         Ok(())
     }
 
-    fn cleanup_all_processes(
-        &self,
-        processes: &[&dyn PlatformProcess],
-    ) -> Result<(), PlatformError> {
+    fn cleanup_all_processes(&self, processes: &[&Self::Process]) -> Result<(), PlatformError> {
         // TODO: Implement macOS cleanup using process groups
         tracing::info!("Cleaning up {} macOS processes", processes.len());
         Ok(())
     }
 
-    fn get_child_processes(
-        &self,
-        process: &dyn PlatformProcess,
-    ) -> Result<Vec<u32>, PlatformError> {
+    fn get_child_processes(&self, process: &Self::Process) -> Result<Vec<u32>, PlatformError> {
         // TODO: Implement child process detection on macOS
         tracing::debug!(
             "Getting child processes for macOS process {}",

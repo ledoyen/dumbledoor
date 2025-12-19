@@ -121,6 +121,18 @@ pub struct WindowsProcessResult {
     pub process_id: u32,
 }
 
+impl WindowsProcessResult {
+    /// Get the process handle as a SafeHandle reference
+    pub fn handle(&self) -> &SafeHandle {
+        &self.process_handle
+    }
+
+    /// Get the process ID
+    pub fn pid(&self) -> u32 {
+        self.process_id
+    }
+}
+
 /// Safe wrapper for Windows Job Object operations
 pub struct WindowsJobObject {
     job_handle: SafeHandle,
@@ -173,6 +185,21 @@ impl WindowsJobObject {
 
     /// Assign a process to this job object
     ///
+    /// This is a SAFE wrapper that takes a SafeHandle instead of raw HANDLE
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process cannot be assigned to the job
+    pub fn assign_process_safe(
+        &self,
+        process_handle: &SafeHandle,
+    ) -> Result<(), UnsafeWindowsError> {
+        // SAFETY: SafeHandle guarantees the handle is valid
+        unsafe { self.assign_process(process_handle.as_raw()) }
+    }
+
+    /// Assign a process to this job object (internal unsafe version)
+    ///
     /// # Safety
     ///
     /// The caller must ensure that `process_handle` is a valid Windows process handle.
@@ -180,9 +207,9 @@ impl WindowsJobObject {
     /// # Errors
     ///
     /// Returns an error if the process cannot be assigned to the job
-    pub unsafe fn assign_process(&self, process_handle: HANDLE) -> Result<(), UnsafeWindowsError> {
+    unsafe fn assign_process(&self, process_handle: HANDLE) -> Result<(), UnsafeWindowsError> {
         // SAFETY: AssignProcessToJobObject is safe with valid handles
-        let result = unsafe { AssignProcessToJobObject(self.job_handle.as_raw(), process_handle) };
+        let result = AssignProcessToJobObject(self.job_handle.as_raw(), process_handle);
 
         if result == 0 {
             return Err(UnsafeWindowsError::SystemCallFailed {
@@ -282,6 +309,21 @@ pub fn create_process(
     })
 }
 
+/// Terminate a Windows process using a SafeHandle
+///
+/// This is a SAFE wrapper that takes a SafeHandle instead of raw HANDLE
+///
+/// # Errors
+///
+/// Returns an error if the process cannot be terminated
+pub fn terminate_process_safe(
+    process_handle: &SafeHandle,
+    exit_code: u32,
+) -> Result<(), UnsafeWindowsError> {
+    // SAFETY: SafeHandle guarantees the handle is valid
+    unsafe { terminate_process(process_handle.as_raw(), exit_code) }
+}
+
 /// Terminate a Windows process
 ///
 /// # Safety
@@ -296,7 +338,7 @@ pub unsafe fn terminate_process(
     exit_code: u32,
 ) -> Result<(), UnsafeWindowsError> {
     // SAFETY: TerminateProcess is safe with a valid handle
-    let result = unsafe { TerminateProcess(process_handle, exit_code) };
+    let result = TerminateProcess(process_handle, exit_code);
 
     if result == 0 {
         let err = io::Error::last_os_error();
@@ -331,6 +373,23 @@ pub fn open_process(pid: u32, desired_access: DWORD) -> Result<SafeHandle, Unsaf
     Ok(unsafe { SafeHandle::new(handle) })
 }
 
+/// Wait for a process to exit or timeout using a SafeHandle
+///
+/// This is a SAFE wrapper that takes a SafeHandle instead of raw HANDLE
+///
+/// # Returns
+///
+/// - `Ok(Some(exit_code))` if process exited
+/// - `Ok(None)` if timeout occurred
+/// - `Err(_)` if an error occurred
+pub fn wait_for_process_safe(
+    process_handle: &SafeHandle,
+    timeout_ms: u32,
+) -> Result<Option<u32>, UnsafeWindowsError> {
+    // SAFETY: SafeHandle guarantees the handle is valid
+    unsafe { wait_for_process(process_handle.as_raw(), timeout_ms) }
+}
+
 /// Wait for a process to exit or timeout
 ///
 /// # Safety
@@ -347,7 +406,7 @@ pub unsafe fn wait_for_process(
     timeout_ms: u32,
 ) -> Result<Option<u32>, UnsafeWindowsError> {
     // SAFETY: WaitForSingleObject is safe with valid parameters
-    let wait_result = unsafe { WaitForSingleObject(process_handle, timeout_ms) };
+    let wait_result = WaitForSingleObject(process_handle, timeout_ms);
 
     if wait_result == WAIT_TIMEOUT {
         return Ok(None);
@@ -356,7 +415,7 @@ pub unsafe fn wait_for_process(
     // Process exited, get exit code
     let mut exit_code: DWORD = 0;
     // SAFETY: GetExitCodeProcess is safe with valid parameters
-    let result = unsafe { GetExitCodeProcess(process_handle, &mut exit_code) };
+    let result = GetExitCodeProcess(process_handle, &mut exit_code);
 
     if result == 0 {
         return Err(UnsafeWindowsError::SystemCallFailed {

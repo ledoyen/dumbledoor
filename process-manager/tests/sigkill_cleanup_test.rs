@@ -153,9 +153,25 @@ fn kill_process(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(unix)]
     {
-        unsafe {
-            if libc::kill(pid as i32, libc::SIGKILL) != 0 {
-                return Err(format!("Failed to send SIGKILL to process {}", pid).into());
+        // Use safe std::process::Command instead of unsafe libc call
+        let output = std::process::Command::new("kill")
+            .arg("-9") // SIGKILL
+            .arg(pid.to_string())
+            .output();
+
+        match output {
+            Ok(result) => {
+                if !result.status.success() {
+                    return Err(format!(
+                        "Failed to send SIGKILL to process {}: {}",
+                        pid,
+                        String::from_utf8_lossy(&result.stderr)
+                    )
+                    .into());
+                }
+            }
+            Err(e) => {
+                return Err(format!("Failed to execute kill command: {}", e).into());
             }
         }
     }

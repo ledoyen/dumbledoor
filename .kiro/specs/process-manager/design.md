@@ -416,6 +416,20 @@ pub enum PlatformError {
 Avoid flat crates, use nested crates when needed, especially to hide implementation details.
 Group struct traits and functions by feature crates, not by technical crates.
 
+
+## Coding guidelines
+
+* No unsafe code AT ALL, except when necessary for manipulating os-specific API. In this case these calls are to be located in an unsafe crate providing a safe public API for the other cartes to use.
+* No unwrap in production code, unwarps can only be used in tests
+* Only expose module as public when part of the public API of the parent module, most of the time you should not
+* Make sure implementation details are not accessible from outside the crate, or better outside a parent module
+* Make precise and exhaustive assertions in tests (println is only a trace for users, not an assertion)
+* Refer to ADR files located in .kiro/specs/process-manager for strategic architectural decisions
+* Always verify at the end of a task that
+  * project and examples compile
+  * tests works as expected
+  * format and lint as expected by CI
+
 ## Testing Strategy
 
 The testing approach focuses on unit testing and integration testing:

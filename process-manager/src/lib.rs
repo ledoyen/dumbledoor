@@ -20,7 +20,9 @@ pub mod reaper;
 // Re-export core types
 pub use cleanup::CleanupHandler;
 pub use error::{PlatformError, ProcessManagerError};
-use platform::PlatformManager;
+use platform::{
+    ConcretePlatformManager, ConcretePlatformProcess, PlatformManager, PlatformProcess,
+};
 pub use plugin::{ConfigurationPlugin, PluginRegistry};
 pub use reaper::{ProcessReaper, ReaperMonitor};
 
@@ -191,7 +193,7 @@ pub enum ProcessStatus {
 }
 
 /// Information about a managed process
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProcessInfo {
     /// Unique handle for this process
     pub handle: ProcessHandle,
@@ -201,11 +203,25 @@ pub struct ProcessInfo {
     pub start_time: SystemTime,
     /// Current status
     pub status: ProcessStatus,
+    /// The actual platform process (optional, set when spawned)
+    pub process: Option<ConcretePlatformProcess>,
+}
+
+impl Clone for ProcessInfo {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle,
+            config: self.config.clone(),
+            start_time: self.start_time,
+            status: self.status.clone(),
+            process: self.process.clone(),
+        }
+    }
 }
 
 /// Main process manager for cross-platform process lifecycle management
 pub struct ProcessManager {
-    platform_manager: Arc<dyn PlatformManager>,
+    platform_manager: ConcretePlatformManager,
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     process_registry: Arc<RwLock<HashMap<ProcessHandle, ProcessInfo>>>,
     cleanup_handler: Arc<CleanupHandler>,
@@ -250,12 +266,19 @@ impl ProcessManager {
         // Generate unique handle
         let handle = ProcessHandle::new();
 
+        // Spawn the process via platform manager
+        let process = self
+            .platform_manager
+            .spawn_process(&enhanced_config)
+            .map_err(|e| ProcessManagerError::PlatformError { error: e })?;
+
         // Create process info
         let process_info = ProcessInfo {
             handle,
             config: enhanced_config.clone(),
             start_time: SystemTime::now(),
-            status: ProcessStatus::Starting,
+            status: ProcessStatus::Running { pid: process.pid() },
+            process: Some(process),
         };
 
         // Register process
@@ -264,24 +287,37 @@ impl ProcessManager {
             registry.insert(handle, process_info);
         }
 
-        // TODO: Implement actual process spawning via platform manager
-        tracing::info!("Starting process with handle {:?}", handle);
+        tracing::info!("Started process with handle {:?}", handle);
 
         Ok(handle)
     }
 
     /// Stop a managed process
     pub fn stop_process(&self, handle: ProcessHandle) -> Result<(), ProcessManagerError> {
-        // TODO: Implement process termination via platform manager
-        tracing::info!("Stopping process with handle {:?}", handle);
+        let process_info = {
+            let registry = self.process_registry.read().unwrap();
+            registry.get(&handle).cloned()
+        };
 
-        // Remove from registry
-        {
-            let mut registry = self.process_registry.write().unwrap();
-            registry.remove(&handle);
+        if let Some(info) = process_info {
+            if let Some(process) = &info.process {
+                // Terminate the process via platform manager
+                self.platform_manager
+                    .terminate_process(process, true)
+                    .map_err(|e| ProcessManagerError::PlatformError { error: e })?;
+            }
+
+            // Remove from registry
+            {
+                let mut registry = self.process_registry.write().unwrap();
+                registry.remove(&handle);
+            }
+
+            tracing::info!("Stopped process with handle {:?}", handle);
+            Ok(())
+        } else {
+            Err(ProcessManagerError::ProcessNotFound { handle })
         }
-
-        Ok(())
     }
 
     /// Query the status of a managed process
@@ -290,9 +326,17 @@ impl ProcessManager {
         handle: ProcessHandle,
     ) -> Result<ProcessStatus, ProcessManagerError> {
         let registry = self.process_registry.read().unwrap();
-        match registry.get(&handle) {
-            Some(info) => Ok(info.status.clone()),
-            None => Err(ProcessManagerError::ProcessNotFound { handle }),
+        if let Some(info) = registry.get(&handle) {
+            if let Some(process) = &info.process {
+                // Query current status from platform manager
+                self.platform_manager
+                    .query_process_status(process)
+                    .map_err(|e| ProcessManagerError::PlatformError { error: e })
+            } else {
+                Ok(info.status.clone())
+            }
+        } else {
+            Err(ProcessManagerError::ProcessNotFound { handle })
         }
     }
 
@@ -312,7 +356,7 @@ impl ProcessManager {
 impl Clone for ProcessManager {
     fn clone(&self) -> Self {
         Self {
-            platform_manager: Arc::clone(&self.platform_manager),
+            platform_manager: self.platform_manager.clone(),
             plugin_registry: Arc::clone(&self.plugin_registry),
             process_registry: Arc::clone(&self.process_registry),
             cleanup_handler: Arc::clone(&self.cleanup_handler),
@@ -551,6 +595,7 @@ mod tests {
             config: config.clone(),
             start_time,
             status: status.clone(),
+            process: None,
         };
 
         assert_eq!(info.handle, handle);
