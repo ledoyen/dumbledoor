@@ -1,11 +1,11 @@
 //! Unsafe Windows Process Management Primitives
-//! 
+//!
 //! This crate contains all unsafe Windows API interactions for process management.
 //! It provides a minimal safe wrapper around Windows process operations while
 //! keeping all unsafe code isolated and well-documented.
 //!
 //! # Safety
-//! 
+//!
 //! This crate contains unsafe code that directly interacts with Windows APIs.
 //! All unsafe operations are documented and justified. The public API provides
 //! safe abstractions over these unsafe operations.
@@ -20,9 +20,7 @@ use std::ptr;
 use winapi::shared::minwindef::{DWORD, FALSE, TRUE};
 use winapi::shared::winerror::WAIT_TIMEOUT;
 use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
-use winapi::um::jobapi2::{
-    AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-};
+use winapi::um::jobapi2::{AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject};
 use winapi::um::processthreadsapi::{
     CreateProcessW, GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_INFORMATION,
     STARTUPINFOW,
@@ -30,8 +28,7 @@ use winapi::um::processthreadsapi::{
 use winapi::um::synchapi::WaitForSingleObject;
 use winapi::um::winbase::CREATE_NEW_PROCESS_GROUP;
 use winapi::um::winnt::{
-    JobObjectExtendedLimitInformation, HANDLE,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectExtendedLimitInformation, HANDLE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 
@@ -58,9 +55,9 @@ impl std::fmt::Display for UnsafeWindowsError {
 impl std::error::Error for UnsafeWindowsError {}
 
 /// Safe wrapper around Windows HANDLE with automatic cleanup
-/// 
+///
 /// # Safety
-/// 
+///
 /// This type implements Send + Sync because:
 /// - Windows HANDLEs are safe to send between threads
 /// - All operations are protected by the Windows kernel
@@ -75,9 +72,9 @@ unsafe impl Sync for SafeHandle {}
 
 impl SafeHandle {
     /// Create a new SafeHandle from a raw Windows HANDLE
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that:
     /// - The handle is valid or INVALID_HANDLE_VALUE
     /// - The handle is not already owned by another SafeHandle
@@ -131,14 +128,14 @@ pub struct WindowsJobObject {
 
 impl WindowsJobObject {
     /// Create a new Windows Job Object with kill-on-close behavior
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the job object cannot be created or configured
     pub fn new() -> Result<Self, UnsafeWindowsError> {
         // SAFETY: CreateJobObjectW is safe to call with null parameters
         let job_handle_raw = unsafe { CreateJobObjectW(ptr::null_mut(), ptr::null()) };
-        
+
         if job_handle_raw.is_null() {
             return Err(UnsafeWindowsError::SystemCallFailed {
                 syscall: "CreateJobObjectW".to_string(),
@@ -175,14 +172,18 @@ impl WindowsJobObject {
     }
 
     /// Assign a process to this job object
-    /// 
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `process_handle` is a valid Windows process handle.
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the process cannot be assigned to the job
-    pub fn assign_process(&self, process_handle: HANDLE) -> Result<(), UnsafeWindowsError> {
+    pub unsafe fn assign_process(&self, process_handle: HANDLE) -> Result<(), UnsafeWindowsError> {
         // SAFETY: AssignProcessToJobObject is safe with valid handles
         let result = unsafe { AssignProcessToJobObject(self.job_handle.as_raw(), process_handle) };
-        
+
         if result == 0 {
             return Err(UnsafeWindowsError::SystemCallFailed {
                 syscall: "AssignProcessToJobObject".to_string(),
@@ -205,18 +206,20 @@ pub fn to_wide_string(s: &str) -> Vec<u16> {
 }
 
 /// Create a Windows process with the given configuration
-/// 
+///
 /// # Safety
-/// 
+///
 /// This function contains unsafe Windows API calls but provides a safe interface.
 /// The caller must ensure the configuration is valid.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if the process cannot be created
-pub fn create_process(config: WindowsProcessConfig) -> Result<WindowsProcessResult, UnsafeWindowsError> {
+pub fn create_process(
+    config: WindowsProcessConfig,
+) -> Result<WindowsProcessResult, UnsafeWindowsError> {
     let mut command_line_wide = to_wide_string(&config.command_line);
-    
+
     let env_ptr = config
         .environment_block
         .as_ref()
@@ -280,14 +283,21 @@ pub fn create_process(config: WindowsProcessConfig) -> Result<WindowsProcessResu
 }
 
 /// Terminate a Windows process
-/// 
+///
+/// # Safety
+///
+/// The caller must ensure that `process_handle` is a valid Windows process handle.
+///
 /// # Errors
-/// 
+///
 /// Returns an error if the process cannot be terminated
-pub fn terminate_process(process_handle: HANDLE, exit_code: u32) -> Result<(), UnsafeWindowsError> {
+pub unsafe fn terminate_process(
+    process_handle: HANDLE,
+    exit_code: u32,
+) -> Result<(), UnsafeWindowsError> {
     // SAFETY: TerminateProcess is safe with a valid handle
     let result = unsafe { TerminateProcess(process_handle, exit_code) };
-    
+
     if result == 0 {
         let err = io::Error::last_os_error();
         // Check if process is already gone (access denied might indicate this)
@@ -305,14 +315,14 @@ pub fn terminate_process(process_handle: HANDLE, exit_code: u32) -> Result<(), U
 }
 
 /// Open a process handle by PID
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if the process cannot be opened
 pub fn open_process(pid: u32, desired_access: DWORD) -> Result<SafeHandle, UnsafeWindowsError> {
     // SAFETY: OpenProcess is safe to call
     let handle = unsafe { OpenProcess(desired_access, FALSE, pid) };
-    
+
     if handle.is_null() || handle == INVALID_HANDLE_VALUE {
         return Err(UnsafeWindowsError::ProcessNotFound);
     }
@@ -322,16 +332,23 @@ pub fn open_process(pid: u32, desired_access: DWORD) -> Result<SafeHandle, Unsaf
 }
 
 /// Wait for a process to exit or timeout
-/// 
+///
+/// # Safety
+///
+/// The caller must ensure that `process_handle` is a valid Windows process handle.
+///
 /// # Returns
-/// 
+///
 /// - `Ok(Some(exit_code))` if process exited
 /// - `Ok(None)` if timeout occurred
 /// - `Err(_)` if an error occurred
-pub fn wait_for_process(process_handle: HANDLE, timeout_ms: u32) -> Result<Option<u32>, UnsafeWindowsError> {
+pub unsafe fn wait_for_process(
+    process_handle: HANDLE,
+    timeout_ms: u32,
+) -> Result<Option<u32>, UnsafeWindowsError> {
     // SAFETY: WaitForSingleObject is safe with valid parameters
     let wait_result = unsafe { WaitForSingleObject(process_handle, timeout_ms) };
-    
+
     if wait_result == WAIT_TIMEOUT {
         return Ok(None);
     }
@@ -340,7 +357,7 @@ pub fn wait_for_process(process_handle: HANDLE, timeout_ms: u32) -> Result<Optio
     let mut exit_code: DWORD = 0;
     // SAFETY: GetExitCodeProcess is safe with valid parameters
     let result = unsafe { GetExitCodeProcess(process_handle, &mut exit_code) };
-    
+
     if result == 0 {
         return Err(UnsafeWindowsError::SystemCallFailed {
             syscall: "GetExitCodeProcess".to_string(),

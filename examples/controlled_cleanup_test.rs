@@ -1,7 +1,9 @@
 //! Test controlled cleanup of Windows platform manager
 
 #[cfg(target_os = "windows")]
-use process_manager::{ProcessConfig, platform::windows_safe::WindowsPlatformManager, platform::PlatformManager};
+use process_manager::{
+    platform::windows_safe::WindowsPlatformManager, platform::PlatformManager, ProcessConfig,
+};
 #[cfg(target_os = "windows")]
 use std::collections::HashMap;
 
@@ -11,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     println!("=== Testing Controlled Cleanup ===");
-    
+
     // Create the Windows platform manager
     let manager = WindowsPlatformManager::new()?;
     println!("✓ Windows platform manager created");

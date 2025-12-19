@@ -8,8 +8,8 @@ use std::time::SystemTime;
 
 #[cfg(windows)]
 use unsafe_windows_process::{
-    create_process, open_process, terminate_process, wait_for_process, WindowsJobObject,
-    WindowsProcessConfig, UnsafeWindowsError,
+    create_process, open_process, terminate_process, wait_for_process, UnsafeWindowsError,
+    WindowsJobObject, WindowsProcessConfig,
 };
 
 /// Windows-specific process representation using safe wrappers
@@ -36,12 +36,13 @@ impl WindowsPlatformManager {
     pub fn new() -> Result<Self, ProcessManagerError> {
         #[cfg(windows)]
         {
-            let job_object = WindowsJobObject::new().map_err(|_e| ProcessManagerError::PlatformError {
-                error: PlatformError::SystemCallFailed {
-                    syscall: "WindowsJobObject::new".to_string(),
-                    errno: -1,
-                },
-            })?;
+            let job_object =
+                WindowsJobObject::new().map_err(|_e| ProcessManagerError::PlatformError {
+                    error: PlatformError::SystemCallFailed {
+                        syscall: "WindowsJobObject::new".to_string(),
+                        errno: -1,
+                    },
+                })?;
 
             tracing::info!("Windows platform manager initialized with Job Object");
 
@@ -174,7 +175,11 @@ impl PlatformManager for WindowsPlatformManager {
             let pid = result.process_id;
 
             // Assign the process to the job object for automatic cleanup
-            if let Err(e) = self.job_object.assign_process(result.process_handle.as_raw()) {
+            // SAFETY: result.process_handle.as_raw() returns a valid handle from create_process
+            if let Err(e) = unsafe {
+                self.job_object
+                    .assign_process(result.process_handle.as_raw())
+            } {
                 tracing::warn!("Failed to assign process {} to job object: {}", pid, e);
                 // Continue anyway - we'll still track the process manually
             }
@@ -230,7 +235,8 @@ impl PlatformManager for WindowsPlatformManager {
                 // Attempt graceful termination by waiting briefly
                 tracing::debug!("Attempting graceful termination of process {}", pid);
 
-                match wait_for_process(handle.as_raw(), 5000) {
+                // SAFETY: handle.as_raw() returns a valid handle from open_process
+                match unsafe { wait_for_process(handle.as_raw(), 5000) } {
                     Ok(Some(_exit_code)) => {
                         // Process exited gracefully
                         tracing::debug!("Process {} exited gracefully", pid);
@@ -241,14 +247,17 @@ impl PlatformManager for WindowsPlatformManager {
                             "Process {} did not exit gracefully, forcing termination",
                             pid
                         );
-                        terminate_process(handle.as_raw(), 1).map_err(Self::convert_error)?;
+                        // SAFETY: handle.as_raw() returns a valid handle from open_process
+                        unsafe { terminate_process(handle.as_raw(), 1) }
+                            .map_err(Self::convert_error)?;
                     }
                     Err(e) => return Err(Self::convert_error(e)),
                 }
             } else {
                 // Force termination immediately
                 tracing::debug!("Forcing termination of process {}", pid);
-                terminate_process(handle.as_raw(), 1).map_err(Self::convert_error)?;
+                // SAFETY: handle.as_raw() returns a valid handle from open_process
+                unsafe { terminate_process(handle.as_raw(), 1) }.map_err(Self::convert_error)?;
             }
 
             // Remove from tracking
@@ -292,7 +301,8 @@ impl PlatformManager for WindowsPlatformManager {
             };
 
             // Check if process is still running (0ms timeout = immediate check)
-            match wait_for_process(handle.as_raw(), 0) {
+            // SAFETY: handle.as_raw() returns a valid handle from open_process
+            match unsafe { wait_for_process(handle.as_raw(), 0) } {
                 Ok(Some(exit_code)) => {
                     // Process has exited
                     Ok(ProcessStatus::Exited {

@@ -1,7 +1,9 @@
 //! Direct test of Windows platform manager functionality
 
 #[cfg(target_os = "windows")]
-use process_manager::{ProcessConfig, platform::windows_safe::WindowsPlatformManager, platform::PlatformManager};
+use process_manager::{
+    platform::windows_safe::WindowsPlatformManager, platform::PlatformManager, ProcessConfig,
+};
 #[cfg(target_os = "windows")]
 use std::collections::HashMap;
 
@@ -23,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a long-running process using ping (which will run for about 10 seconds)
     let temp_dir = std::env::temp_dir();
     let log_file = temp_dir.join("process_manager_test.log");
-    
+
     let config = ProcessConfig {
         command: "ping".into(),
         args: vec![

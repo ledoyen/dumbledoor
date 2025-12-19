@@ -1,14 +1,16 @@
 //! Test Windows platform manager cleanup functionality
 
 #[cfg(target_os = "windows")]
-use process_manager::{ProcessConfig, platform::windows_safe::WindowsPlatformManager, platform::PlatformManager};
+use process_manager::{
+    platform::windows_safe::WindowsPlatformManager, platform::PlatformManager, ProcessConfig,
+};
 #[cfg(target_os = "windows")]
 use std::collections::HashMap;
 
 #[cfg(target_os = "windows")]
 fn spawn_long_running_process() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Testing Job Object Cleanup ===");
-    
+
     // Create the Windows platform manager in a scope that will drop
     let manager = WindowsPlatformManager::new()?;
     println!("✓ Windows platform manager created");
@@ -44,12 +46,14 @@ fn spawn_long_running_process() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check that all processes are running
     for (i, process) in processes.iter().enumerate() {
-        let status = manager.query_process_status(process.as_ref() as &dyn process_manager::platform::PlatformProcess)?;
+        let status = manager.query_process_status(
+            process.as_ref() as &dyn process_manager::platform::PlatformProcess
+        )?;
         println!("Process {} status: {:?}", i + 1, status);
     }
 
     println!("All processes are running. Now the manager will drop and Job Object cleanup should kick in...");
-    
+
     // Return the processes so they don't get dropped yet
     // But the manager will drop at the end of this function
     Ok(())

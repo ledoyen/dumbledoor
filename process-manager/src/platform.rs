@@ -58,17 +58,23 @@ pub trait PlatformManager: Send + Sync {
 pub fn create_platform_manager() -> Result<Arc<dyn PlatformManager>, ProcessManagerError> {
     #[cfg(target_os = "linux")]
     {
-        Ok(Arc::new(crate::platform::linux::LinuxPlatformManager::new()?))
+        Ok(Arc::new(
+            crate::platform::linux::LinuxPlatformManager::new()?
+        ))
     }
 
     #[cfg(target_os = "macos")]
     {
-        Ok(Arc::new(crate::platform::macos::MacOSPlatformManager::new()?))
+        Ok(Arc::new(
+            crate::platform::macos::MacOSPlatformManager::new()?
+        ))
     }
 
     #[cfg(target_os = "windows")]
     {
-        Ok(Arc::new(crate::platform::windows_safe::WindowsPlatformManager::new()?))
+        Ok(Arc::new(
+            crate::platform::windows_safe::WindowsPlatformManager::new()?,
+        ))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

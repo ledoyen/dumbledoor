@@ -462,8 +462,7 @@ mod tests {
 
     #[test]
     fn test_process_config_validation_log_file_invalid_parent() {
-        let config =
-            ProcessConfig::new("echo").log_file("/nonexistent/directory/output.log");
+        let config = ProcessConfig::new("echo").log_file("/nonexistent/directory/output.log");
         let result = config.validate();
         assert!(result.is_err());
         match result {
