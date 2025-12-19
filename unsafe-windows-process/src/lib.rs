@@ -26,7 +26,7 @@ use winapi::um::processthreadsapi::{
     STARTUPINFOW,
 };
 use winapi::um::synchapi::WaitForSingleObject;
-use winapi::um::winbase::CREATE_NEW_PROCESS_GROUP;
+use winapi::um::winbase::{CREATE_NEW_PROCESS_GROUP, CREATE_UNICODE_ENVIRONMENT};
 use winapi::um::winnt::{
     JobObjectExtendedLimitInformation, HANDLE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -253,6 +253,12 @@ pub fn create_process(
         .map(|v| v.as_ptr() as *mut _)
         .unwrap_or(ptr::null_mut());
 
+    // Determine creation flags
+    let mut creation_flags = CREATE_NEW_PROCESS_GROUP;
+    if config.environment_block.is_some() {
+        creation_flags |= CREATE_UNICODE_ENVIRONMENT;
+    }
+
     let working_dir_wide = config
         .working_directory
         .as_ref()
@@ -276,7 +282,7 @@ pub fn create_process(
             ptr::null_mut(),
             ptr::null_mut(),
             if config.inherit_handles { TRUE } else { FALSE },
-            CREATE_NEW_PROCESS_GROUP,
+            creation_flags,
             env_ptr,
             working_dir_ptr,
             &mut startup_info,

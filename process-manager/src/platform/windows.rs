@@ -98,6 +98,11 @@ impl WindowsPlatformManager {
     }
 
     /// Build environment block from environment variables
+    ///
+    /// Windows requires environment blocks to be:
+    /// 1. Sorted alphabetically by key (case-insensitive)
+    /// 2. In the format "KEY=VALUE\0KEY2=VALUE2\0\0"
+    /// 3. Encoded as UTF-16 (wide strings)
     #[allow(dead_code)]
     fn build_environment_block(env: &HashMap<String, String>) -> Option<Vec<u16>> {
         if env.is_empty() {
@@ -112,14 +117,18 @@ impl WindowsPlatformManager {
             merged_env.insert(key.clone(), value.clone());
         }
 
+        // Convert to sorted vector for consistent ordering
+        let mut env_pairs: Vec<(String, String)> = merged_env.into_iter().collect();
+        env_pairs.sort_by(|a, b| a.0.to_uppercase().cmp(&b.0.to_uppercase()));
+
         let mut env_block = String::new();
-        for (key, value) in merged_env {
+        for (key, value) in env_pairs {
             env_block.push_str(&key);
             env_block.push('=');
             env_block.push_str(&value);
             env_block.push('\0');
         }
-        env_block.push('\0');
+        env_block.push('\0'); // Double null terminator
 
         Some(unsafe_windows_process::to_wide_string(&env_block))
     }
@@ -172,9 +181,8 @@ impl PlatformManager for WindowsPlatformManager {
         let command_line = Self::build_command_line(config);
         tracing::debug!("Command line: {}", command_line);
 
-        // Build environment block - for now, don't pass custom environment to avoid issues
-        // TODO: Fix environment block creation to properly handle custom environment variables
-        let env_block = None; // Self::build_environment_block(&config.environment);
+        // Build environment block
+        let env_block = Self::build_environment_block(&config.environment);
 
         // Determine working directory
         let working_dir = config
@@ -353,6 +361,170 @@ mod tests {
         assert!(cmd_line.contains("\"test command\""));
         assert!(cmd_line.contains("\"arg with spaces\""));
         assert!(cmd_line.contains("simple_arg"));
+    }
+
+    #[test]
+    fn test_environment_block_building() {
+        use std::collections::HashMap;
+
+        // Test empty environment
+        let empty_env = HashMap::new();
+        let result = WindowsPlatformManager::build_environment_block(&empty_env);
+        assert!(result.is_none(), "Empty environment should return None");
+
+        // Test single environment variable
+        let mut single_env = HashMap::new();
+        single_env.insert("TEST_VAR".to_string(), "test_value".to_string());
+        let result = WindowsPlatformManager::build_environment_block(&single_env);
+        assert!(
+            result.is_some(),
+            "Single environment variable should return Some"
+        );
+
+        let env_block = result.unwrap();
+        assert!(
+            !env_block.is_empty(),
+            "Environment block should not be empty"
+        );
+
+        // Convert wide string back to UTF-8 for testing
+        let env_string = String::from_utf16_lossy(&env_block);
+
+        // Should contain our test variable
+        assert!(
+            env_string.contains("TEST_VAR=test_value"),
+            "Environment block should contain TEST_VAR=test_value, got: {}",
+            env_string
+        );
+
+        // Test multiple environment variables with sorting
+        let mut multi_env = HashMap::new();
+        multi_env.insert("ZZZ_LAST".to_string(), "last_value".to_string());
+        multi_env.insert("AAA_FIRST".to_string(), "first_value".to_string());
+        multi_env.insert("MMM_MIDDLE".to_string(), "middle_value".to_string());
+
+        let result = WindowsPlatformManager::build_environment_block(&multi_env);
+        assert!(
+            result.is_some(),
+            "Multiple environment variables should return Some"
+        );
+
+        let env_block = result.unwrap();
+        let env_string = String::from_utf16_lossy(&env_block);
+
+        // Should contain all variables
+        assert!(env_string.contains("AAA_FIRST=first_value"));
+        assert!(env_string.contains("MMM_MIDDLE=middle_value"));
+        assert!(env_string.contains("ZZZ_LAST=last_value"));
+
+        // Variables should be sorted (AAA should come before MMM which should come before ZZZ)
+        let aaa_pos = env_string.find("AAA_FIRST").expect("AAA_FIRST not found");
+        let mmm_pos = env_string.find("MMM_MIDDLE").expect("MMM_MIDDLE not found");
+        let zzz_pos = env_string.find("ZZZ_LAST").expect("ZZZ_LAST not found");
+
+        assert!(aaa_pos < mmm_pos, "AAA_FIRST should come before MMM_MIDDLE");
+        assert!(mmm_pos < zzz_pos, "MMM_MIDDLE should come before ZZZ_LAST");
+    }
+
+    #[test]
+    fn test_environment_variable_override() {
+        use std::collections::HashMap;
+
+        // Set a test environment variable in the current process
+        std::env::set_var("TEST_OVERRIDE", "original_value");
+
+        // Create config that overrides it
+        let mut override_env = HashMap::new();
+        override_env.insert("TEST_OVERRIDE".to_string(), "new_value".to_string());
+
+        let result = WindowsPlatformManager::build_environment_block(&override_env);
+        assert!(result.is_some(), "Override environment should return Some");
+
+        let env_block = result.unwrap();
+        let env_string = String::from_utf16_lossy(&env_block);
+
+        // Should contain the new value, not the original
+        assert!(
+            env_string.contains("TEST_OVERRIDE=new_value"),
+            "Environment block should contain overridden value, got: {}",
+            env_string
+        );
+        assert!(
+            !env_string.contains("TEST_OVERRIDE=original_value"),
+            "Environment block should not contain original value"
+        );
+
+        // Clean up
+        std::env::remove_var("TEST_OVERRIDE");
+    }
+
+    #[test]
+    fn test_environment_case_insensitive_sorting() {
+        use std::collections::HashMap;
+
+        let mut env = HashMap::new();
+        env.insert("zLast".to_string(), "value1".to_string());
+        env.insert("AFirst".to_string(), "value2".to_string());
+        env.insert("mMiddle".to_string(), "value3".to_string());
+
+        let result = WindowsPlatformManager::build_environment_block(&env);
+        assert!(result.is_some());
+
+        let env_block = result.unwrap();
+        let env_string = String::from_utf16_lossy(&env_block);
+
+        // Should be sorted case-insensitively: AFirst, mMiddle, zLast
+        let a_pos = env_string.find("AFirst").expect("AFirst not found");
+        let m_pos = env_string.find("mMiddle").expect("mMiddle not found");
+        let z_pos = env_string.find("zLast").expect("zLast not found");
+
+        assert!(
+            a_pos < m_pos,
+            "AFirst should come before mMiddle (case-insensitive)"
+        );
+        assert!(
+            m_pos < z_pos,
+            "mMiddle should come before zLast (case-insensitive)"
+        );
+    }
+
+    #[test]
+    fn test_process_spawning_with_environment() {
+        let manager = WindowsPlatformManager::new().expect("Failed to create manager");
+
+        let config = ProcessConfig {
+            command: PathBuf::from("cmd.exe"),
+            args: vec![
+                "/c".to_string(),
+                "echo".to_string(),
+                "%TEST_ENV_VAR%".to_string(),
+            ],
+            working_directory: None,
+            environment: {
+                let mut env = HashMap::new();
+                env.insert(
+                    "TEST_ENV_VAR".to_string(),
+                    "environment_test_value".to_string(),
+                );
+                env
+            },
+            log_file: None,
+        };
+
+        // Spawn the process
+        let process = manager
+            .spawn_process(&config)
+            .expect("Failed to spawn process with environment");
+
+        let pid = process.pid();
+        assert!(pid > 0, "Process should have a valid PID");
+
+        // Test termination
+        let result = manager.terminate_process(&process, false);
+        assert!(result.is_ok(), "Process termination should succeed");
+
+        // Give some time for termination to complete
+        thread::sleep(Duration::from_millis(500));
     }
 
     #[test]

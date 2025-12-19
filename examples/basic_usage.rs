@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     let config = ProcessConfig::new("cmd.exe")
         .args(["/c", "echo", "Hello", "World"])
+        .env("TEST_VAR", "test_value")
         .working_directory("C:\\Windows\\Temp");
 
     #[cfg(unix)]
