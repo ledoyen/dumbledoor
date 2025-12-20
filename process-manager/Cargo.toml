@@ -45,3 +45,9 @@ path = "../examples/platform_check.rs"
 name = "sigkill_victim"
 path = "tests/test_victims/sigkill_victim.rs"
 required-features = ["binary-deps"]
+
+# Binary for the process reaper
+[[bin]]
+name = "process_reaper"
+path = "src/bin/process_reaper.rs"
+required-features = ["binary-deps"]

@@ -327,6 +327,11 @@ impl PlatformManager for WindowsPlatformManager {
         // A full implementation would use additional Windows APIs
         Ok(Vec::new())
     }
+
+    fn needs_reaper(&self) -> bool {
+        // Windows Job Objects provide automatic cleanup, so no reaper needed
+        false
+    }
 }
 
 #[cfg(test)]

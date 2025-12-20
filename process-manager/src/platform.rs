@@ -46,6 +46,9 @@ pub trait PlatformManager: Send + Sync {
 
     /// Get child processes spawned by the given process
     fn get_child_processes(&self, process: &Self::Process) -> Result<Vec<u32>, PlatformError>;
+
+    /// Check if this platform needs a process reaper for zombie cleanup
+    fn needs_reaper(&self) -> bool;
 }
 
 // Platform-specific concrete types (compile-time selected)

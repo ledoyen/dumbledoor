@@ -92,4 +92,10 @@ impl PlatformManager for MacOSPlatformManager {
         );
         Ok(Vec::new())
     }
+
+    fn needs_reaper(&self) -> bool {
+        // macOS may need reaper for some scenarios, but process groups usually handle cleanup
+        // For now, we'll say it doesn't need a reaper
+        false
+    }
 }

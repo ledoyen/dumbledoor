@@ -45,34 +45,72 @@ fn main() {
     println!("Number of children: {}", num_children);
     println!("Nested mode: {}", nested);
 
-    // Create ProcessManager (for future integration when implementation is complete)
-    let _manager = ProcessManager::new().expect("Failed to create ProcessManager");
+    // Create ProcessManager and use it to spawn managed processes
+    let manager = ProcessManager::new().expect("Failed to create ProcessManager");
 
     let mut all_pids = Vec::new();
+    let mut process_handles = Vec::new();
     let mut child_processes = Vec::new();
 
-    // For now, spawn processes directly since ProcessManager is still a stub
-    // In the future, this will use the ProcessManager API
+    // Use ProcessManager to spawn processes (this will test the reaper integration)
     for i in 0..num_children {
-        let child = spawn_direct_child_process(i, nested)
-            .unwrap_or_else(|_| panic!("Failed to spawn child process {}", i));
+        let config = create_child_process_config(i, nested);
 
-        let pid = child.id();
-        all_pids.push(pid);
-        child_processes.push(child);
+        match manager.start_process(config) {
+            Ok(handle) => {
+                // Query the PID from the process status
+                match manager.query_status(handle) {
+                    Ok(status) => {
+                        if let process_manager::ProcessStatus::Running { pid } = status {
+                            all_pids.push(pid);
+                            process_handles.push(handle);
+                            println!("Started managed child process {} with PID: {}", i, pid);
+                        } else {
+                            eprintln!("Child process {} not in running state: {:?}", i, status);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to query status for child process {}: {}", i, e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to start managed child process {}: {}", i, e);
+                // Fall back to direct spawning for compatibility
+                if let Ok(child) = spawn_direct_child_process(i, nested) {
+                    let pid = child.id();
+                    all_pids.push(pid);
+                    child_processes.push(child);
+                    println!("Started direct child process {} with PID: {}", i, pid);
+                }
+            }
+        }
 
-        println!("Started child process {} with PID: {}", i, pid);
-
-        // If nested mode, spawn grandchildren
+        // If nested mode, spawn additional processes
         if nested {
-            if let Ok(grandchild) = spawn_direct_grandchild_process(i) {
-                let grandchild_pid = grandchild.id();
-                all_pids.push(grandchild_pid);
-                child_processes.push(grandchild);
-                println!(
-                    "Started grandchild process {}.1 with PID: {}",
-                    i, grandchild_pid
-                );
+            let nested_config = create_nested_process_config(i);
+            match manager.start_process(nested_config) {
+                Ok(handle) => {
+                    if let Ok(status) = manager.query_status(handle) {
+                        if let process_manager::ProcessStatus::Running { pid } = status {
+                            all_pids.push(pid);
+                            process_handles.push(handle);
+                            println!("Started nested managed process {}.1 with PID: {}", i, pid);
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Fall back to direct spawning
+                    if let Ok(grandchild) = spawn_direct_grandchild_process(i) {
+                        let grandchild_pid = grandchild.id();
+                        all_pids.push(grandchild_pid);
+                        child_processes.push(grandchild);
+                        println!(
+                            "Started direct grandchild process {}.1 with PID: {}",
+                            i, grandchild_pid
+                        );
+                    }
+                }
             }
         }
 
@@ -107,14 +145,44 @@ fn main() {
     // Keep the process alive until killed
     // The child processes will remain running as long as this process is alive
     println!("Victim process ready - waiting for SIGKILL...");
-    println!("Managing {} child processes", child_processes.len());
+    println!(
+        "Managing {} managed processes and {} direct processes",
+        process_handles.len(),
+        child_processes.len()
+    );
 
     loop {
         thread::sleep(Duration::from_secs(1));
 
         // Keep the child process handles alive
-        // When this process is killed, the OS should clean up the children
-        // (on Windows via Job Objects, on Unix via process groups/namespaces)
+        // When this process is killed, the ProcessManager should clean up the managed processes
+        // and the OS should clean up the direct processes
+    }
+}
+
+/// Create a process configuration for a child process
+fn create_child_process_config(index: usize, _nested: bool) -> process_manager::ProcessConfig {
+    #[cfg(windows)]
+    {
+        process_manager::ProcessConfig::new("ping").args(["127.0.0.1", "-n", "3600"])
+    }
+
+    #[cfg(unix)]
+    {
+        process_manager::ProcessConfig::new("sleep").args(["3600"])
+    }
+}
+
+/// Create a process configuration for a nested process
+fn create_nested_process_config(_parent_index: usize) -> process_manager::ProcessConfig {
+    #[cfg(windows)]
+    {
+        process_manager::ProcessConfig::new("ping").args(["127.0.0.1", "-n", "1800"])
+    }
+
+    #[cfg(unix)]
+    {
+        process_manager::ProcessConfig::new("sleep").args(["1800"])
     }
 }
 

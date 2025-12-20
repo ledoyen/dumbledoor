@@ -14,7 +14,7 @@ pub use uuid::Uuid;
 pub mod error;
 mod platform;
 pub mod plugin;
-pub mod reaper;
+mod reaper;
 
 // Re-export core types
 pub use error::{PlatformError, ProcessManagerError};
@@ -231,12 +231,32 @@ impl ProcessManager {
         let platform_manager = platform::create_platform_manager()?;
         let plugin_registry = Arc::new(RwLock::new(PluginRegistry::new()));
         let process_registry = Arc::new(RwLock::new(HashMap::new()));
-        let reaper_monitor = Arc::new(RwLock::new(None));
 
         // Set up platform-specific cleanup handlers
         platform_manager
             .setup_cleanup_handler()
             .map_err(|e| ProcessManagerError::PlatformError { error: e })?;
+
+        // Initialize reaper if needed by the platform
+        let reaper_monitor = if platform_manager.needs_reaper() {
+            tracing::info!("Platform requires process reaper, spawning reaper process");
+            match ReaperMonitor::spawn_reaper() {
+                Ok(monitor) => {
+                    tracing::info!("Process reaper spawned successfully");
+                    Arc::new(RwLock::new(Some(monitor)))
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to spawn process reaper: {}, continuing without reaper",
+                        e
+                    );
+                    Arc::new(RwLock::new(None))
+                }
+            }
+        } else {
+            tracing::info!("Platform does not require process reaper");
+            Arc::new(RwLock::new(None))
+        };
 
         Ok(Self {
             platform_manager,
@@ -272,12 +292,23 @@ impl ProcessManager {
             .spawn_process(&enhanced_config)
             .map_err(|e| ProcessManagerError::PlatformError { error: e })?;
 
+        let pid = process.pid();
+
+        // Register with reaper if available
+        if let Ok(mut reaper_guard) = self.reaper_monitor.write() {
+            if let Some(ref mut reaper) = *reaper_guard {
+                if let Err(e) = reaper.register_process(pid) {
+                    tracing::warn!("Failed to register process {} with reaper: {}", pid, e);
+                }
+            }
+        }
+
         // Create process info
         let process_info = ProcessInfo {
             handle,
             config: enhanced_config.clone(),
             start_time: SystemTime::now(),
-            status: ProcessStatus::Running { pid: process.pid() },
+            status: ProcessStatus::Running { pid },
             process: Some(process),
         };
 
@@ -287,7 +318,7 @@ impl ProcessManager {
             registry.insert(handle, process_info);
         }
 
-        tracing::info!("Started process with handle {:?}", handle);
+        tracing::info!("Started process with handle {:?} (PID: {})", handle, pid);
 
         Ok(handle)
     }
@@ -300,11 +331,32 @@ impl ProcessManager {
         };
 
         if let Some(info) = process_info {
-            if let Some(process) = &info.process {
+            let pid = if let Some(process) = &info.process {
+                let pid = process.pid();
+
                 // Terminate the process via platform manager
                 self.platform_manager
                     .terminate_process(process, true)
                     .map_err(|e| ProcessManagerError::PlatformError { error: e })?;
+
+                pid
+            } else {
+                0 // No PID available
+            };
+
+            // Unregister from reaper if available
+            if pid > 0 {
+                if let Ok(mut reaper_guard) = self.reaper_monitor.write() {
+                    if let Some(ref mut reaper) = *reaper_guard {
+                        if let Err(e) = reaper.unregister_process(pid) {
+                            tracing::warn!(
+                                "Failed to unregister process {} from reaper: {}",
+                                pid,
+                                e
+                            );
+                        }
+                    }
+                }
             }
 
             // Remove from registry
@@ -313,7 +365,7 @@ impl ProcessManager {
                 registry.remove(&handle);
             }
 
-            tracing::info!("Stopped process with handle {:?}", handle);
+            tracing::info!("Stopped process with handle {:?} (PID: {})", handle, pid);
             Ok(())
         } else {
             Err(ProcessManagerError::ProcessNotFound { handle })
@@ -376,6 +428,60 @@ impl ProcessManager {
             }
 
             tracing::info!("Cleaned up {} processes", processes.len());
+        }
+
+        // Shutdown reaper if running
+        if let Ok(mut reaper_guard) = self.reaper_monitor.write() {
+            if let Some(ref mut reaper) = *reaper_guard {
+                if let Err(e) = reaper.shutdown() {
+                    tracing::warn!("Failed to shutdown reaper: {}", e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if the reaper process is alive and restart if needed
+    pub fn ensure_reaper_alive(&self) -> Result<(), ProcessManagerError> {
+        if !self.platform_manager.needs_reaper() {
+            return Ok(()); // No reaper needed
+        }
+
+        let needs_restart = {
+            let mut reaper_guard = self.reaper_monitor.write().unwrap();
+            if let Some(ref mut reaper) = *reaper_guard {
+                if !reaper.is_reaper_alive() {
+                    tracing::warn!("Reaper process died, attempting restart");
+                    if let Err(e) = reaper.restart_reaper() {
+                        tracing::error!("Failed to restart reaper: {}", e);
+                        return Err(ProcessManagerError::CleanupFailed {
+                            details: format!("Reaper restart failed: {}", e),
+                        });
+                    }
+                    false // Successfully restarted
+                } else {
+                    false // Reaper is alive
+                }
+            } else {
+                true // No reaper exists, need to create one
+            }
+        };
+
+        if needs_restart {
+            match ReaperMonitor::spawn_reaper() {
+                Ok(new_reaper) => {
+                    let mut reaper_guard = self.reaper_monitor.write().unwrap();
+                    *reaper_guard = Some(new_reaper);
+                    tracing::info!("Successfully spawned new reaper process");
+                }
+                Err(e) => {
+                    tracing::error!("Failed to spawn new reaper process: {}", e);
+                    return Err(ProcessManagerError::CleanupFailed {
+                        details: format!("Failed to spawn reaper: {}", e),
+                    });
+                }
+            }
         }
 
         Ok(())

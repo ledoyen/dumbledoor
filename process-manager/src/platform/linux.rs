@@ -110,4 +110,9 @@ impl PlatformManager for LinuxPlatformManager {
         );
         Ok(Vec::new())
     }
+
+    fn needs_reaper(&self) -> bool {
+        // Linux needs reaper when user namespaces are not available
+        self.needs_reaper
+    }
 }
