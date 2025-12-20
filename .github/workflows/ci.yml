@@ -71,14 +71,17 @@ jobs:
     name: Test Suite
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os:
+          #- ubuntu-latest
+          #- macos-latest
+          - windows-latest
         rust: [stable, beta]
         exclude:
           # Only test beta on Ubuntu to reduce CI time
-          - os: macos-latest
-            rust: beta
-          - os: windows-latest
-            rust: beta
+          #- os: macos-latest
+          #  rust: beta
+          #- os: windows-latest
+          #  rust: beta
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code

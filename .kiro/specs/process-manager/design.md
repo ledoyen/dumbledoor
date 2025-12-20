@@ -30,8 +30,7 @@ The system follows a layered architecture with clear separation of concerns:
 3. **ProcessHandle**: Unique identifier and control interface for individual processes
 4. **PlatformManager**: Platform-specific implementation for process control and cleanup
 5. **PluginRegistry**: Extensible system for configuration enhancement
-6. **CleanupHandler**: Cross-platform cleanup coordination
-7. **ProcessReaper**: Separate background process for zombie cleanup on systems without user namespaces
+6. **ProcessReaper**: Separate background process for zombie cleanup on systems without user namespaces
 
 ## Components and Interfaces
 
@@ -46,7 +45,6 @@ pub struct ProcessManager {
     platform_manager: Arc<dyn PlatformManager>,
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     process_registry: Arc<RwLock<HashMap<ProcessHandle, ProcessInfo>>>,
-    cleanup_handler: Arc<CleanupHandler>,
     reaper_monitor: Arc<RwLock<Option<ReaperMonitor>>>,
 }
 
@@ -66,7 +64,6 @@ impl Clone for ProcessManager {
             platform_manager: Arc::clone(&self.platform_manager),
             plugin_registry: Arc::clone(&self.plugin_registry),
             process_registry: Arc::clone(&self.process_registry),
-            cleanup_handler: Arc::clone(&self.cleanup_handler),
             reaper_monitor: Arc::clone(&self.reaper_monitor),
         }
     }

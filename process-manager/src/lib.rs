@@ -11,14 +11,12 @@ use std::time::SystemTime;
 pub use uuid::Uuid;
 
 // Core modules
-pub mod cleanup;
 pub mod error;
 mod platform;
 pub mod plugin;
 pub mod reaper;
 
 // Re-export core types
-pub use cleanup::CleanupHandler;
 pub use error::{PlatformError, ProcessManagerError};
 use platform::{
     ConcretePlatformManager, ConcretePlatformProcess, PlatformManager, PlatformProcess,
@@ -224,7 +222,6 @@ pub struct ProcessManager {
     platform_manager: ConcretePlatformManager,
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     process_registry: Arc<RwLock<HashMap<ProcessHandle, ProcessInfo>>>,
-    cleanup_handler: Arc<CleanupHandler>,
     reaper_monitor: Arc<RwLock<Option<ReaperMonitor>>>,
 }
 
@@ -234,14 +231,17 @@ impl ProcessManager {
         let platform_manager = platform::create_platform_manager()?;
         let plugin_registry = Arc::new(RwLock::new(PluginRegistry::new()));
         let process_registry = Arc::new(RwLock::new(HashMap::new()));
-        let cleanup_handler = Arc::new(CleanupHandler::new()?);
         let reaper_monitor = Arc::new(RwLock::new(None));
+
+        // Set up platform-specific cleanup handlers
+        platform_manager
+            .setup_cleanup_handler()
+            .map_err(|e| ProcessManagerError::PlatformError { error: e })?;
 
         Ok(Self {
             platform_manager,
             plugin_registry,
             process_registry,
-            cleanup_handler,
             reaper_monitor,
         })
     }
@@ -351,6 +351,35 @@ impl ProcessManager {
         let mut registry = self.plugin_registry.write().unwrap();
         registry.register(plugin);
     }
+
+    /// Clean up all managed processes
+    pub fn cleanup_all(&self) -> Result<(), ProcessManagerError> {
+        let processes: Vec<_> = {
+            let registry = self.process_registry.read().unwrap();
+            registry
+                .values()
+                .filter_map(|info| info.process.as_ref())
+                .cloned()
+                .collect()
+        };
+
+        if !processes.is_empty() {
+            let process_refs: Vec<_> = processes.iter().collect();
+            self.platform_manager
+                .cleanup_all_processes(&process_refs)
+                .map_err(|e| ProcessManagerError::PlatformError { error: e })?;
+
+            // Clear the process registry after cleanup
+            {
+                let mut registry = self.process_registry.write().unwrap();
+                registry.clear();
+            }
+
+            tracing::info!("Cleaned up {} processes", processes.len());
+        }
+
+        Ok(())
+    }
 }
 
 impl Clone for ProcessManager {
@@ -359,7 +388,6 @@ impl Clone for ProcessManager {
             platform_manager: self.platform_manager.clone(),
             plugin_registry: Arc::clone(&self.plugin_registry),
             process_registry: Arc::clone(&self.process_registry),
-            cleanup_handler: Arc::clone(&self.cleanup_handler),
             reaper_monitor: Arc::clone(&self.reaper_monitor),
         }
     }
