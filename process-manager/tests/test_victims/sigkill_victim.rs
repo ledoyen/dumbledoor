@@ -7,8 +7,8 @@
 //! Usage: sigkill_victim <pid_file> <ready_file> <num_children> [--nested]
 //!
 //! The victim process:
-//! 1. Creates a ProcessManager instance (for future integration)
-//! 2. Spawns the specified number of long-running child processes directly
+//! 1. Creates a ProcessManager instance
+//! 2. Spawns the specified number of long-running child processes via ProcessManager
 //! 3. Writes all PIDs to the pid_file
 //! 4. Creates the ready_file to signal the orchestrator
 //! 5. Waits indefinitely (until killed by orchestrator)
@@ -17,7 +17,6 @@ use process_manager::ProcessManager;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
@@ -45,14 +44,23 @@ fn main() {
     println!("Number of children: {}", num_children);
     println!("Nested mode: {}", nested);
 
+    // Create our own process group so we can be killed as a group
+    unsafe {
+        let pid = libc::getpid();
+        if libc::setpgid(pid, pid) == -1 {
+            eprintln!("Warning: Failed to create process group");
+        } else {
+            println!("Created process group {}", pid);
+        }
+    }
+
     // Create ProcessManager and use it to spawn managed processes
     let manager = ProcessManager::new().expect("Failed to create ProcessManager");
 
-    let mut all_pids = Vec::new();
+    let mut all_pids: Vec<u32> = Vec::new();
     let mut process_handles = Vec::new();
-    let mut child_processes = Vec::new();
 
-    // Use ProcessManager to spawn processes (this will test the reaper integration)
+    // Use ProcessManager to spawn processes (this will test the cleanup integration)
     for i in 0..num_children {
         let config = create_child_process_config(i, nested);
 
@@ -76,13 +84,7 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("Failed to start managed child process {}: {}", i, e);
-                // Fall back to direct spawning for compatibility
-                if let Ok(child) = spawn_direct_child_process(i, nested) {
-                    let pid = child.id();
-                    all_pids.push(pid);
-                    child_processes.push(child);
-                    println!("Started direct child process {} with PID: {}", i, pid);
-                }
+                std::process::exit(1);
             }
         }
 
@@ -99,17 +101,9 @@ fn main() {
                         }
                     }
                 }
-                Err(_) => {
-                    // Fall back to direct spawning
-                    if let Ok(grandchild) = spawn_direct_grandchild_process(i) {
-                        let grandchild_pid = grandchild.id();
-                        all_pids.push(grandchild_pid);
-                        child_processes.push(grandchild);
-                        println!(
-                            "Started direct grandchild process {}.1 with PID: {}",
-                            i, grandchild_pid
-                        );
-                    }
+                Err(e) => {
+                    eprintln!("Failed to start nested managed process: {}", e);
+                    std::process::exit(1);
                 }
             }
         }
@@ -145,23 +139,19 @@ fn main() {
     // Keep the process alive until killed
     // The child processes will remain running as long as this process is alive
     println!("Victim process ready - waiting for SIGKILL...");
-    println!(
-        "Managing {} managed processes and {} direct processes",
-        process_handles.len(),
-        child_processes.len()
-    );
+    println!("Managing {} ProcessManager handles", process_handles.len());
 
     loop {
         thread::sleep(Duration::from_secs(1));
 
-        // Keep the child process handles alive
+        // Keep the ProcessManager and process handles alive
         // When this process is killed, the ProcessManager should clean up the managed processes
-        // and the OS should clean up the direct processes
+        // via platform-specific mechanisms (process groups, job objects, etc.)
     }
 }
 
 /// Create a process configuration for a child process
-fn create_child_process_config(index: usize, _nested: bool) -> process_manager::ProcessConfig {
+fn create_child_process_config(_index: usize, _nested: bool) -> process_manager::ProcessConfig {
     #[cfg(windows)]
     {
         process_manager::ProcessConfig::new("ping").args(["127.0.0.1", "-n", "3600"])
@@ -169,7 +159,7 @@ fn create_child_process_config(index: usize, _nested: bool) -> process_manager::
 
     #[cfg(unix)]
     {
-        process_manager::ProcessConfig::new("sleep").args(["3600"])
+        process_manager::ProcessConfig::new("/bin/sleep").args(["3600"])
     }
 }
 
@@ -182,51 +172,6 @@ fn create_nested_process_config(_parent_index: usize) -> process_manager::Proces
 
     #[cfg(unix)]
     {
-        process_manager::ProcessConfig::new("sleep").args(["1800"])
-    }
-}
-
-/// Spawn a child process directly (bypassing ProcessManager stub)
-fn spawn_direct_child_process(
-    _index: usize,
-    _nested: bool,
-) -> std::io::Result<std::process::Child> {
-    #[cfg(windows)]
-    {
-        Command::new("ping")
-            .args(["127.0.0.1", "-n", "3600"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-    }
-
-    #[cfg(unix)]
-    {
-        Command::new("sleep")
-            .arg("3600")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-    }
-}
-
-/// Spawn a grandchild process directly (for nested testing)
-fn spawn_direct_grandchild_process(_parent_index: usize) -> std::io::Result<std::process::Child> {
-    #[cfg(windows)]
-    {
-        Command::new("ping")
-            .args(["127.0.0.1", "-n", "1800"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-    }
-
-    #[cfg(unix)]
-    {
-        Command::new("sleep")
-            .arg("1800")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
+        process_manager::ProcessConfig::new("/bin/sleep").args(["1800"])
     }
 }

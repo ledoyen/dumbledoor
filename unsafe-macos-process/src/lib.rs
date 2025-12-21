@@ -224,13 +224,8 @@ fn setup_child_process(
     working_dir: Option<&CString>,
     log_file: Option<File>,
 ) -> Result<(), UnsafeMacOSError> {
-    // Create a new process group for this process
-    let pid = unsafe { libc::getpid() };
-    if unsafe { libc::setpgid(pid, pid) } == -1 {
-        let _errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
-        // Don't fail here - continue with the process creation
-        // The parent will handle process group management
-    }
+    // DO NOT create a new process group - stay in the parent's process group
+    // This ensures that when the parent process group is killed, all children die too
 
     // Set working directory
     if let Some(wd) = working_dir {
@@ -243,7 +238,7 @@ fn setup_child_process(
         }
     }
 
-    // Set up log file redirection
+    // Set up log file redirection or redirect to /dev/null
     if let Some(log_file) = log_file {
         let log_fd = log_file.as_raw_fd();
 
@@ -264,15 +259,37 @@ fn setup_child_process(
                 errno,
             });
         }
+    } else {
+        // Redirect stdout and stderr to /dev/null if no log file specified
+        let dev_null = unsafe {
+            libc::open(
+                c"/dev/null".as_ptr(),
+                libc::O_WRONLY,
+            )
+        };
+        if dev_null != -1 {
+            unsafe {
+                libc::dup2(dev_null, libc::STDOUT_FILENO);
+                libc::dup2(dev_null, libc::STDERR_FILENO);
+                libc::close(dev_null);
+            }
+        }
     }
 
     // Prepare argv array
     let mut argv: Vec<*const libc::c_char> = args.iter().map(|s| s.as_ptr()).collect();
     argv.push(std::ptr::null()); // NULL-terminate the array
 
-    // Prepare envp array
-    let mut envp: Vec<*const libc::c_char> = env_vars.iter().map(|s| s.as_ptr()).collect();
-    envp.push(std::ptr::null()); // NULL-terminate the array
+    // Prepare envp array - if empty, use a minimal environment
+    let envp: Vec<*const libc::c_char> = if env_vars.is_empty() {
+        // Provide minimal environment
+        let path_env = CString::new("PATH=/usr/bin:/bin:/usr/sbin:/sbin").unwrap();
+        vec![path_env.as_ptr(), std::ptr::null()]
+    } else {
+        let mut env_ptrs: Vec<*const libc::c_char> = env_vars.iter().map(|s| s.as_ptr()).collect();
+        env_ptrs.push(std::ptr::null()); // NULL-terminate the array
+        env_ptrs
+    };
 
     // Execute the new program
     unsafe {

@@ -424,7 +424,7 @@ Group struct traits and functions by feature crates, not by technical crates.
 * Refer to ADR files located in .kiro/specs/process-manager for strategic architectural decisions
 * Always verify at the end of a task that
   * project and examples compile
-  * tests works as expected
+  * tests work as expected
   * format and lint as expected by CI
 
 ## Testing Strategy

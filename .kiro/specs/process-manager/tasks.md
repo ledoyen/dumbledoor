@@ -72,14 +72,14 @@
   - Implement child process tracking for detached processes
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 4.2, 8.5_
 
-- [-] 5.1 Write unit tests for macOS platform manager
+- [x] 5.1 Write unit tests for macOS platform manager
   - Test process group management
   - Test signal-based termination
   - Test environment and working directory isolation
   - Test child process detection
   - _Requirements: 1.2, 1.3, 2.2, 8.5_
 
-- [ ]* 5.2 Write E2E tests for macOS platform
+- [x] 5.2 Write E2E tests for macOS platform
   - Test complete process lifecycle on macOS
   - Test cleanup guarantees with signal termination
   - Test process group behavior

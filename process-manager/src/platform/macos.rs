@@ -297,8 +297,21 @@ extern "C" fn cleanup_signal_handler(signal: libc::c_int) {
         }
     }
 
-    // In a real implementation, you would trigger cleanup here
-    // For now, we just exit
+    // Kill all processes in our process group
+    // This ensures that child processes are cleaned up when the parent dies
+    unsafe {
+        let pgid = libc::getpgrp();
+        // Send SIGTERM to the entire process group first
+        libc::kill(-pgid, libc::SIGTERM);
+
+        // Give processes a moment to terminate gracefully
+        libc::usleep(100_000); // 100ms
+
+        // Then send SIGKILL to ensure cleanup
+        libc::kill(-pgid, libc::SIGKILL);
+    }
+
+    // Exit the current process
     safe_exit(0);
 }
 
