@@ -442,6 +442,14 @@ impl ProcessManager {
         Ok(())
     }
 
+    /// Create a new process group for the current process
+    /// This is useful for test processes that need to be killed as a group
+    pub fn create_process_group(&self) -> Result<i32, ProcessManagerError> {
+        self.platform_manager
+            .create_process_group()
+            .map_err(|e| ProcessManagerError::PlatformError { error: e })
+    }
+
     /// Check if the reaper process is alive and restart if needed
     pub fn ensure_reaper_alive(&self) -> Result<(), ProcessManagerError> {
         if !self.platform_manager.needs_reaper() {
@@ -495,6 +503,18 @@ impl Clone for ProcessManager {
             plugin_registry: Arc::clone(&self.plugin_registry),
             process_registry: Arc::clone(&self.process_registry),
             reaper_monitor: Arc::clone(&self.reaper_monitor),
+        }
+    }
+}
+
+impl Drop for ProcessManager {
+    fn drop(&mut self) {
+        // Ensure cleanup happens when ProcessManager is dropped
+        if let Err(e) = self.cleanup_all() {
+            tracing::warn!(
+                "Failed to cleanup processes during ProcessManager drop: {}",
+                e
+            );
         }
     }
 }

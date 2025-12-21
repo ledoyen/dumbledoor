@@ -7,8 +7,8 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use unsafe_windows_process::{
-    create_process, terminate_process_safe, wait_for_process_safe, SafeHandle, UnsafeWindowsError,
-    WindowsJobObject, WindowsProcessConfig,
+    create_process, safe_get_current_process_id, terminate_process_safe, wait_for_process_safe,
+    SafeHandle, UnsafeWindowsError, WindowsJobObject, WindowsProcessConfig,
 };
 
 /// Windows-specific process representation using safe wrappers
@@ -331,6 +331,15 @@ impl PlatformManager for WindowsPlatformManager {
     fn needs_reaper(&self) -> bool {
         // Windows Job Objects provide automatic cleanup, so no reaper needed
         false
+    }
+
+    fn create_process_group(&self) -> Result<i32, PlatformError> {
+        // Windows doesn't have Unix-style process groups, but we can return the current process ID
+        // Process groups are handled via Job Objects instead
+        tracing::info!("Creating process group on Windows (using Job Objects)");
+
+        let pid = safe_get_current_process_id();
+        Ok(pid as i32)
     }
 }
 

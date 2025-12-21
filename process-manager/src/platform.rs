@@ -49,6 +49,9 @@ pub trait PlatformManager: Send + Sync {
 
     /// Check if this platform needs a process reaper for zombie cleanup
     fn needs_reaper(&self) -> bool;
+
+    /// Create a new process group for the current process
+    fn create_process_group(&self) -> Result<i32, PlatformError>;
 }
 
 // Platform-specific concrete types (compile-time selected)

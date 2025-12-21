@@ -10,7 +10,7 @@ use std::ffi::CString;
 #[cfg(target_os = "macos")]
 use std::fs::File;
 #[cfg(target_os = "macos")]
-use std::io;
+use std::io::{self};
 #[cfg(target_os = "macos")]
 use std::os::unix::io::AsRawFd;
 #[cfg(target_os = "macos")]
@@ -238,8 +238,13 @@ fn setup_child_process(
     working_dir: Option<&CString>,
     log_file: Option<File>,
 ) -> Result<(), UnsafeMacOSError> {
-    // DO NOT create a new process group - stay in the parent's process group
-    // This ensures that when the parent process group is killed, all children die too
+    // Create a new process group for this child process
+    // This ensures proper cleanup when the parent process manager terminates
+    let pid = unsafe { libc::getpid() };
+    if unsafe { libc::setpgid(pid, pid) } == -1 {
+        // Don't fail if we can't create a process group - continue anyway
+        eprintln!("Warning: Failed to create process group");
+    }
 
     // Set working directory
     if let Some(wd) = working_dir {
@@ -492,6 +497,22 @@ pub fn safe_find_child_processes(parent_pid: u32) -> Result<Vec<u32>, UnsafeMacO
     Ok(Vec::new())
 }
 
+/// Safely create a new process group for the current process
+#[cfg(target_os = "macos")]
+pub fn safe_create_process_group() -> Result<i32, UnsafeMacOSError> {
+    let pid = unsafe { libc::getpid() };
+
+    if unsafe { libc::setpgid(pid, pid) } == -1 {
+        let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
+        return Err(UnsafeMacOSError::SystemCallFailed {
+            syscall: "setpgid".to_string(),
+            errno,
+        });
+    }
+
+    Ok(pid)
+}
+
 /// Safely exit the current process
 #[cfg(target_os = "macos")]
 pub fn safe_exit(code: i32) -> ! {
@@ -508,6 +529,14 @@ pub fn safe_is_process_alive(pid: u32) -> bool {
 #[cfg(not(target_os = "macos"))]
 pub fn safe_is_process_alive(_pid: u32) -> bool {
     false
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn safe_create_process_group() -> Result<i32, std::io::Error> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Process groups not supported on this platform",
+    ))
 }
 
 #[cfg(all(test, target_os = "macos"))]

@@ -115,4 +115,20 @@ impl PlatformManager for LinuxPlatformManager {
         // Linux needs reaper when user namespaces are not available
         self.needs_reaper
     }
+
+    fn create_process_group(&self) -> Result<i32, PlatformError> {
+        // TODO: Implement Linux process group creation
+        tracing::info!("Creating process group on Linux");
+        unsafe {
+            let pid = libc::getpid();
+            if libc::setpgid(pid, pid) == -1 {
+                let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+                return Err(PlatformError::SystemCallFailed {
+                    syscall: "setpgid".to_string(),
+                    errno,
+                });
+            }
+            Ok(pid)
+        }
+    }
 }

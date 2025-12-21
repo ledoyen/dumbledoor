@@ -44,26 +44,6 @@ fn main() {
     println!("Number of children: {}", num_children);
     println!("Nested mode: {}", nested);
 
-    // Create our own process group so we can be killed as a group
-    #[cfg(unix)]
-    {
-        unsafe {
-            let pid = libc::getpid();
-            if libc::setpgid(pid, pid) == -1 {
-                eprintln!("Warning: Failed to create process group");
-            } else {
-                println!("Created process group {}", pid);
-            }
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        // On Windows, process groups are handled differently via Job Objects
-        // The ProcessManager will handle this automatically
-        println!("Windows process - process group handling via Job Objects");
-    }
-
     // Create ProcessManager and use it to spawn managed processes
     let manager = ProcessManager::new().expect("Failed to create ProcessManager");
 
@@ -103,12 +83,12 @@ fn main() {
             let nested_config = create_nested_process_config(i);
             match manager.start_process(nested_config) {
                 Ok(handle) => {
-                    if let Ok(status) = manager.query_status(handle) {
-                        if let process_manager::ProcessStatus::Running { pid } = status {
-                            all_pids.push(pid);
-                            process_handles.push(handle);
-                            println!("Started nested managed process {}.1 with PID: {}", i, pid);
-                        }
+                    if let Ok(process_manager::ProcessStatus::Running { pid }) =
+                        manager.query_status(handle)
+                    {
+                        all_pids.push(pid);
+                        process_handles.push(handle);
+                        println!("Started nested managed process {}.1 with PID: {}", i, pid);
                     }
                 }
                 Err(e) => {

@@ -433,6 +433,12 @@ pub unsafe fn wait_for_process(
     Ok(Some(exit_code))
 }
 
+/// Get the current process ID safely
+pub fn safe_get_current_process_id() -> u32 {
+    // SAFETY: GetCurrentProcessId is always safe to call
+    unsafe { winapi::um::processthreadsapi::GetCurrentProcessId() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
