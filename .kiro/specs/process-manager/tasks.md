@@ -72,7 +72,7 @@
   - Implement child process tracking for detached processes
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 4.2, 8.5_
 
-- [ ]* 5.1 Write unit tests for macOS platform manager
+- [-] 5.1 Write unit tests for macOS platform manager
   - Test process group management
   - Test signal-based termination
   - Test environment and working directory isolation
@@ -88,11 +88,6 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.5_
 
 - [x] 6. Implement Windows platform manager
-
-
-
-
-
   - Implement WindowsPlatformManager using Job Objects
   - Implement Windows-specific process termination (TerminateProcess)
   - Implement process spawning with explicit configuration
@@ -101,12 +96,6 @@
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 4.3, 8.5_
 
 - [x] 6.1 Write unit tests for Windows platform manager
-
-
-
-
-
-
   - Test Job Object creation and management
   - Test Windows process termination
   - Test environment and working directory isolation
@@ -114,14 +103,6 @@
   - _Requirements: 1.2, 1.3, 2.2, 8.5_
 
 - [x] 6.2 Write E2E tests for Windows platform
-
-
-
-
-
-
-
-
   - Test complete process lifecycle on Windows
   - Test cleanup guarantees with process termination
   - Test Job Object behavior
@@ -130,8 +111,6 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.5_
 
 - [x] 7. Implement process reaper system
-
-
   - Create ProcessReaper as separate executable
   - Implement ReaperMonitor for reaper lifecycle management
   - Implement IPC communication (Unix sockets/Named pipes)
