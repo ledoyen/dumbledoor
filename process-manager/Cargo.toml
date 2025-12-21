@@ -13,6 +13,9 @@ tokio = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+unsafe-macos-process = { path = "../unsafe-macos-process" }
+
 [target.'cfg(windows)'.dependencies]
 unsafe-windows-process = { path = "../unsafe-windows-process" }
 

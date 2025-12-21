@@ -483,7 +483,12 @@ impl ProcessReaper {
     }
 
     /// Check if a process is still alive
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
+    fn is_process_alive(pid: u32) -> bool {
+        unsafe_macos_process::safe_is_process_alive(pid)
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
     fn is_process_alive(pid: u32) -> bool {
         unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
     }
