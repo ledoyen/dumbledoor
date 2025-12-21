@@ -3,14 +3,21 @@
 //! This crate provides safe wrappers around unsafe macOS system calls for process management.
 //! All unsafe operations are contained within this crate and exposed through safe APIs.
 
+#[cfg(target_os = "macos")]
 use std::collections::HashMap;
+#[cfg(target_os = "macos")]
 use std::ffi::CString;
+#[cfg(target_os = "macos")]
 use std::fs::File;
+#[cfg(target_os = "macos")]
 use std::io;
+#[cfg(target_os = "macos")]
 use std::os::unix::io::AsRawFd;
+#[cfg(target_os = "macos")]
 use std::time::SystemTime;
 
 /// Errors that can occur during unsafe macOS operations
+#[cfg(target_os = "macos")]
 #[derive(Debug, thiserror::Error)]
 pub enum UnsafeMacOSError {
     #[error("System call failed: {syscall}: {errno}")]
@@ -27,6 +34,7 @@ pub enum UnsafeMacOSError {
 }
 
 /// Configuration for spawning a macOS process
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone)]
 pub struct MacOSProcessConfig {
     /// Command to execute
@@ -42,6 +50,7 @@ pub struct MacOSProcessConfig {
 }
 
 /// Result of spawning a macOS process
+#[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub struct MacOSProcessResult {
     /// Process ID
@@ -53,6 +62,7 @@ pub struct MacOSProcessResult {
 }
 
 /// Safe handle for a macOS process
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone)]
 pub struct SafeMacOSProcess {
     /// Process ID
@@ -63,6 +73,7 @@ pub struct SafeMacOSProcess {
     pub start_time: SystemTime,
 }
 
+#[cfg(target_os = "macos")]
 impl SafeMacOSProcess {
     /// Create a new safe process handle
     pub fn new(pid: u32, pgid: i32, start_time: SystemTime) -> Self {
@@ -90,6 +101,7 @@ impl SafeMacOSProcess {
 }
 
 /// Process status information
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone)]
 pub enum ProcessStatus {
     /// Process is running
@@ -103,6 +115,7 @@ pub enum ProcessStatus {
 }
 
 /// Safely spawn a macOS process using fork/exec
+#[cfg(target_os = "macos")]
 pub fn safe_spawn_process(
     config: MacOSProcessConfig,
 ) -> Result<MacOSProcessResult, UnsafeMacOSError> {
@@ -217,6 +230,7 @@ pub fn safe_spawn_process(
 }
 
 /// Set up the child process environment and exec the new program
+#[cfg(target_os = "macos")]
 fn setup_child_process(
     command: &CString,
     args: &[CString],
@@ -261,12 +275,7 @@ fn setup_child_process(
         }
     } else {
         // Redirect stdout and stderr to /dev/null if no log file specified
-        let dev_null = unsafe {
-            libc::open(
-                c"/dev/null".as_ptr(),
-                libc::O_WRONLY,
-            )
-        };
+        let dev_null = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY) };
         if dev_null != -1 {
             unsafe {
                 libc::dup2(dev_null, libc::STDOUT_FILENO);
@@ -305,6 +314,7 @@ fn setup_child_process(
 }
 
 /// Safely terminate a process using signals
+#[cfg(target_os = "macos")]
 pub fn safe_terminate_process(
     process: &SafeMacOSProcess,
     graceful: bool,
@@ -385,6 +395,7 @@ pub fn safe_terminate_process(
 }
 
 /// Safely check if a process is running
+#[cfg(target_os = "macos")]
 pub fn safe_is_process_running(pid: u32) -> Result<bool, UnsafeMacOSError> {
     let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
 
@@ -404,6 +415,7 @@ pub fn safe_is_process_running(pid: u32) -> Result<bool, UnsafeMacOSError> {
 }
 
 /// Safely get the exit status of a process
+#[cfg(target_os = "macos")]
 pub fn safe_get_process_status(pid: u32) -> Result<ProcessStatus, UnsafeMacOSError> {
     let mut status: libc::c_int = 0;
     let result = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
@@ -443,6 +455,7 @@ pub fn safe_get_process_status(pid: u32) -> Result<ProcessStatus, UnsafeMacOSErr
 }
 
 /// Safely install signal handlers for cleanup
+#[cfg(target_os = "macos")]
 pub fn safe_install_signal_handlers(
     handler: extern "C" fn(libc::c_int),
 ) -> Result<(), UnsafeMacOSError> {
@@ -470,6 +483,7 @@ pub fn safe_install_signal_handlers(
 }
 
 /// Find child processes of a given process (simplified implementation)
+#[cfg(target_os = "macos")]
 pub fn safe_find_child_processes(parent_pid: u32) -> Result<Vec<u32>, UnsafeMacOSError> {
     // This is a simplified implementation that returns an empty list
     // A full implementation would parse process information or use system calls
@@ -479,16 +493,24 @@ pub fn safe_find_child_processes(parent_pid: u32) -> Result<Vec<u32>, UnsafeMacO
 }
 
 /// Safely exit the current process
+#[cfg(target_os = "macos")]
 pub fn safe_exit(code: i32) -> ! {
     unsafe { libc::_exit(code) }
 }
 
 /// Safely check if a process is alive (alternative to safe_is_process_running for reaper use)
+#[cfg(target_os = "macos")]
 pub fn safe_is_process_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }
 
-#[cfg(test)]
+// Provide stub implementations for non-macOS platforms
+#[cfg(not(target_os = "macos"))]
+pub fn safe_is_process_alive(_pid: u32) -> bool {
+    false
+}
+
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
     use std::collections::HashMap;
@@ -586,5 +608,14 @@ mod tests {
             let _ = safe_terminate_process(&process, true);
             let _ = std::fs::remove_file("/tmp/test_env_output.log");
         }
+    }
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+mod tests {
+    #[test]
+    fn test_stub_functionality() {
+        // Test that the stub function works on non-macOS platforms
+        assert!(!super::safe_is_process_alive(999999));
     }
 }

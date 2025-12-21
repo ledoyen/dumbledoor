@@ -45,13 +45,23 @@ fn main() {
     println!("Nested mode: {}", nested);
 
     // Create our own process group so we can be killed as a group
-    unsafe {
-        let pid = libc::getpid();
-        if libc::setpgid(pid, pid) == -1 {
-            eprintln!("Warning: Failed to create process group");
-        } else {
-            println!("Created process group {}", pid);
+    #[cfg(unix)]
+    {
+        unsafe {
+            let pid = libc::getpid();
+            if libc::setpgid(pid, pid) == -1 {
+                eprintln!("Warning: Failed to create process group");
+            } else {
+                println!("Created process group {}", pid);
+            }
         }
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, process groups are handled differently via Job Objects
+        // The ProcessManager will handle this automatically
+        println!("Windows process - process group handling via Job Objects");
     }
 
     // Create ProcessManager and use it to spawn managed processes
