@@ -154,20 +154,12 @@
   - Test plugin auto-registration
   - _Requirements: 7.2, 7.6_
 
-- [ ] 10. Implement cleanup handler system
-  - Create CleanupHandler for cross-platform cleanup coordination
-  - Implement signal handlers for graceful shutdown
-  - Implement cleanup on normal program exit
-  - Integrate with platform managers and reaper system
-  - Ensure cleanup attempts graceful termination before forcing
-  - _Requirements: 3.3, 3.4, 3.5_
-
-- [ ]* 10.1 Write unit tests for cleanup handler
-  - Test signal-based cleanup scenarios
-  - Test normal exit cleanup
-  - Test graceful vs forced termination sequence
-  - Test cleanup coordination with platform managers
-  - _Requirements: 3.3, 3.4, 3.5_
+- [x] 10. Rationalize integration tests and E2E tests
+  - Regroup test by features and eliminate duplicates
+  - Use the same tests for all supported platform, with local feature flags to platform-specific stuff like commands (short or long-running)
+  - Add a new function returning an option to retrieve the PID of the reaper, in the case there is, so it can be handled in a generic way from the tests
+  - Only keep integration tests adding value regarding existing e2e tests
+  - Make sure the code is ready for CI checks
 
 - [ ] 11. Implement main ProcessManager
   - Create thread-safe ProcessManager with Arc/RwLock
@@ -200,8 +192,11 @@
   - Test error scenarios with invalid log paths
   - _Requirements: 8.6_
 
-- [ ] 13. Checkpoint - Ensure all tests pass
-  - Ensure all tests pass, ask the user if questions arise.
+- [ ] 13. Ready for production
+  - Search for all places where there is a todo or naive implementation comment and make a proper implementation for each
+  - Search for all places where there is dead code or a clippy allow dead code comment. Decide if this code is usefull for the public API, if so, test it and use it in examples. Otherwise remove it.
+  - At the end, no more un-ready comment or annotations in the code
+  - Make sure the code is ready for CI checks
 
 - [ ] 14. Add comprehensive documentation
   - Write API documentation with examples

@@ -116,6 +116,12 @@ jobs:
       - name: Run integration tests
         run: just test-integration
 
+      - name: Run E2E tests
+        run: just test-e2e
+
+      - name: Run platform-specific tests
+        run: just test-platform
+
       - name: Run doc tests
         run: just test-doc
 

@@ -1,6 +1,13 @@
 //! Integration tests for the process manager
+//!
+//! This file has been replaced by more focused test files:
+//! - integration_focused_test.rs: Core integration functionality
+//! - process_lifecycle_test.rs: Cross-platform E2E process lifecycle tests
+//! - platform_features_test.rs: Platform-specific feature tests
+//!
+//! The tests below are kept for backward compatibility but are minimal.
 
-use process_manager::{ProcessConfig, ProcessHandle, ProcessManager, ProcessStatus};
+use process_manager::{ProcessHandle, ProcessManager};
 
 #[test]
 fn test_process_manager_creation() {
@@ -12,90 +19,11 @@ fn test_process_manager_creation() {
 }
 
 #[test]
-fn test_process_config_builder() {
-    #[cfg(windows)]
-    let config = ProcessConfig::new("cmd.exe")
-        .args(["hello", "world"])
-        .working_directory("C:\\Windows")
-        .env("TEST", "value")
-        .log_file("C:\\temp\\output.log");
-
-    #[cfg(unix)]
-    let config = ProcessConfig::new("/bin/echo")
-        .args(["hello", "world"])
-        .working_directory("/tmp")
-        .env("TEST", "value")
-        .log_file("/tmp/output.log");
-
-    #[cfg(windows)]
-    {
-        assert_eq!(config.command.to_str().unwrap(), "cmd.exe");
-        assert_eq!(config.args, vec!["hello", "world"]);
-        assert_eq!(
-            config.working_directory.as_ref().unwrap().to_str().unwrap(),
-            "C:\\Windows"
-        );
-        assert_eq!(config.environment.get("TEST").unwrap(), "value");
-        assert_eq!(
-            config.log_file.as_ref().unwrap().to_str().unwrap(),
-            "C:\\temp\\output.log"
-        );
-    }
-
-    #[cfg(unix)]
-    {
-        assert_eq!(config.command.to_str().unwrap(), "/bin/echo");
-        assert_eq!(config.args, vec!["hello", "world"]);
-        assert_eq!(
-            config.working_directory.as_ref().unwrap().to_str().unwrap(),
-            "/tmp"
-        );
-        assert_eq!(config.environment.get("TEST").unwrap(), "value");
-        assert_eq!(
-            config.log_file.as_ref().unwrap().to_str().unwrap(),
-            "/tmp/output.log"
-        );
-    }
-}
-
-#[test]
 fn test_process_handle_uniqueness() {
     let handle1 = ProcessHandle::new();
     let handle2 = ProcessHandle::new();
     assert_ne!(handle1, handle2, "Process handles should be unique");
 }
 
-#[test]
-fn test_process_manager_basic_operations() {
-    let manager = ProcessManager::new().expect("Failed to create ProcessManager");
-
-    // Test listing processes (should be empty initially)
-    let processes = manager.list_processes();
-    assert!(processes.is_empty(), "Initial process list should be empty");
-
-    // Test starting a process - use platform-appropriate command
-    #[cfg(windows)]
-    let config = ProcessConfig::new("cmd.exe").args(["/c", "echo", "test"]);
-    #[cfg(unix)]
-    let config = ProcessConfig::new("/bin/echo").args(["test"]);
-
-    let handle = manager
-        .start_process(config)
-        .expect("Failed to start process");
-
-    // Test querying status
-    let status = manager
-        .query_status(handle)
-        .expect("Failed to query status");
-    match status {
-        ProcessStatus::Running { .. } => {
-            // This is expected for our implementation
-        }
-        _ => panic!("Unexpected process status: {:?}", status),
-    }
-
-    // Test stopping process
-    manager
-        .stop_process(handle)
-        .expect("Failed to stop process");
-}
+// Note: Most integration tests have been moved to integration_focused_test.rs
+// for better organization and to avoid duplication with E2E tests.

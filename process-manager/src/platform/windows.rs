@@ -239,7 +239,7 @@ impl PlatformManager for WindowsPlatformManager {
             // Attempt graceful termination by waiting briefly
             tracing::debug!("Attempting graceful termination of process {}", pid);
 
-            match wait_for_process_safe(handle, 5000) {
+            match wait_for_process_safe(handle, 1000) {
                 Ok(Some(_exit_code)) => {
                     // Process exited gracefully
                     tracing::debug!("Process {} exited gracefully", pid);

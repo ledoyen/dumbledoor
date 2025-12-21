@@ -494,6 +494,27 @@ impl ProcessManager {
 
         Ok(())
     }
+
+    /// Get the PID of the reaper process if one exists
+    ///
+    /// Returns `Some(pid)` if a reaper process is running, `None` if no reaper
+    /// is needed by the platform or if no reaper is currently active.
+    pub fn get_reaper_pid(&self) -> Option<u32> {
+        if !self.platform_manager.needs_reaper() {
+            return None; // No reaper needed on this platform
+        }
+
+        let mut reaper_guard = self.reaper_monitor.write().unwrap();
+        if let Some(ref mut reaper) = *reaper_guard {
+            if reaper.is_reaper_alive() {
+                Some(reaper.reaper_pid())
+            } else {
+                None // Reaper exists but is not alive
+            }
+        } else {
+            None // No reaper exists
+        }
+    }
 }
 
 impl Clone for ProcessManager {
