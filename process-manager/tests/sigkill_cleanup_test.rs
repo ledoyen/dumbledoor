@@ -232,65 +232,26 @@ fn kill_process(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(unix)]
     {
-        // Try multiple approaches to ensure the process is killed
-
-        // First try to kill the entire process group (negative PID)
-        let pgkill_output = std::process::Command::new("kill")
-            .arg("-15") // SIGTERM
-            .arg(format!("-{}", pid)) // Negative PID = process group
-            .output();
-
-        if let Ok(result) = pgkill_output {
-            if result.status.success() {
-                println!("Sent SIGTERM to process group {}", pid);
-                // Give it a moment to terminate gracefully
-                thread::sleep(Duration::from_millis(200));
-
-                // Check if the main process is still running
-                if !process_exists(pid) {
-                    println!("Process group {} terminated gracefully with SIGTERM", pid);
-                    return Ok(());
-                }
-            }
-        }
-
-        // If process group SIGTERM didn't work, try SIGKILL on the process group
-        let pgkill_output = std::process::Command::new("kill")
+        // Kill ONLY the main process (not the process group) to test reaper functionality
+        // This simulates what happens when a user kills the ProcessManager with kill -9 <pid>
+        let individual_kill = std::process::Command::new("kill")
             .arg("-9") // SIGKILL
-            .arg(format!("-{}", pid)) // Negative PID = process group
+            .arg(pid.to_string()) // Individual PID, NOT process group
             .output();
 
-        match pgkill_output {
+        match individual_kill {
             Ok(result) => {
                 if result.status.success() {
-                    println!("Successfully sent SIGKILL to process group {}", pid);
+                    println!("Successfully sent SIGKILL to individual process {}", pid);
                 } else {
                     let stderr = String::from_utf8_lossy(&result.stderr);
-                    println!("Process group kill failed: {}", stderr);
-
-                    // Fall back to individual process kill
-                    let individual_kill = std::process::Command::new("kill")
-                        .arg("-9")
-                        .arg(pid.to_string())
-                        .output();
-
-                    if let Ok(individual_result) = individual_kill {
-                        if !individual_result.status.success() {
-                            let individual_stderr =
-                                String::from_utf8_lossy(&individual_result.stderr);
-                            if individual_stderr.contains("No such process") {
-                                println!("Process {} was already terminated", pid);
-                                return Ok(());
-                            }
-                            return Err(format!(
-                                "Failed to send SIGKILL to process {}: {}",
-                                pid, individual_stderr
-                            )
-                            .into());
-                        } else {
-                            println!("Successfully sent SIGKILL to individual process {}", pid);
-                        }
+                    if stderr.contains("No such process") {
+                        println!("Process {} was already terminated", pid);
+                        return Ok(());
                     }
+                    return Err(
+                        format!("Failed to send SIGKILL to process {}: {}", pid, stderr).into(),
+                    );
                 }
             }
             Err(e) => {
@@ -582,24 +543,24 @@ fn test_sigkill_cleanup_basic() {
 
     if !surviving_children.is_empty() {
         eprintln!(
-            "WARNING: Child processes still running after cleanup: {:?}",
+            "FAILURE: Child processes still running after cleanup: {:?}",
             surviving_children
         );
-        eprintln!(
-            "This indicates that the ProcessManager cleanup mechanisms are not fully implemented."
-        );
-        eprintln!("The current implementation does not provide guaranteed cleanup when the host process is killed with SIGKILL.");
+        eprintln!("This indicates that the ProcessManager reaper is not working correctly.");
+        eprintln!("When the ProcessManager is killed with SIGKILL, child processes should be cleaned up by the reaper.");
 
         // Try to clean up manually for test hygiene
         for &pid in &surviving_children {
             let _ = kill_process(pid);
         }
 
-        // For now, we'll mark this as a known limitation rather than a test failure
-        // TODO: Implement proper platform-specific cleanup mechanisms
-        println!("✓ Test completed - cleanup limitation documented");
+        // This should be a test failure, not just a warning
+        panic!(
+            "ProcessManager reaper failed: {} child processes survived parent death",
+            surviving_children.len()
+        );
     } else {
-        println!("✓ All child processes cleaned up successfully");
+        println!("✓ All child processes cleaned up successfully by reaper");
     }
 
     // Verify no process leaks occurred
@@ -701,21 +662,22 @@ fn test_sigkill_cleanup_nested_processes() {
 
     if !surviving_processes.is_empty() {
         eprintln!(
-            "WARNING: Processes still running after cleanup: {:?}",
+            "FAILURE: Processes still running after cleanup: {:?}",
             surviving_processes
         );
-        eprintln!(
-            "This indicates that the ProcessManager cleanup mechanisms are not fully implemented."
-        );
+        eprintln!("This indicates that the ProcessManager reaper is not working correctly.");
 
         // Manual cleanup for test hygiene
         for &pid in &surviving_processes {
             let _ = kill_process(pid);
         }
 
-        println!("✓ Nested test completed - cleanup limitation documented");
+        panic!(
+            "ProcessManager reaper failed: {} nested processes survived parent death",
+            surviving_processes.len()
+        );
     } else {
-        println!("✓ All nested processes cleaned up successfully");
+        println!("✓ All nested processes cleaned up successfully by reaper");
     }
 
     // Clean up test files
@@ -805,23 +767,24 @@ fn test_sigkill_cleanup_stress() {
 
     if !surviving_children.is_empty() {
         eprintln!(
-            "WARNING: {} processes survived stress cleanup: {:?}",
+            "FAILURE: {} processes survived stress cleanup: {:?}",
             surviving_children.len(),
             surviving_children
         );
-        eprintln!(
-            "This indicates that the ProcessManager cleanup mechanisms are not fully implemented."
-        );
+        eprintln!("This indicates that the ProcessManager reaper is not working correctly.");
 
         // Manual cleanup
         for &pid in &surviving_children {
             let _ = kill_process(pid);
         }
 
-        println!("✓ Stress test completed - cleanup limitation documented");
+        panic!(
+            "ProcessManager reaper failed under stress: {} processes survived",
+            surviving_children.len()
+        );
     } else {
         println!(
-            "✓ Stress test passed - all {} processes cleaned up",
+            "✓ Stress test passed - all {} processes cleaned up by reaper",
             num_children
         );
     }
