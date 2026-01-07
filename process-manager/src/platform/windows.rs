@@ -170,7 +170,7 @@ impl Clone for WindowsPlatformManager {
 impl Drop for WindowsPlatformManager {
     fn drop(&mut self) {
         // Job object will automatically clean up processes when dropped
-        tracing::debug!("Dropping WindowsPlatformManager, job object will be closed");
+        tracing::debug!("Windows Job Object will be closed, cleaning up managed processes");
     }
 }
 
@@ -179,7 +179,7 @@ impl PlatformManager for WindowsPlatformManager {
 
     fn spawn_process(&self, config: &ProcessConfig) -> Result<Self::Process, PlatformError> {
         let command_line = Self::build_command_line(config);
-        tracing::debug!("Command line: {}", command_line);
+        tracing::debug!("Building Windows command line for process execution");
 
         // Build environment block
         let env_block = Self::build_environment_block(&config.environment);
@@ -237,26 +237,23 @@ impl PlatformManager for WindowsPlatformManager {
 
         if graceful {
             // Attempt graceful termination by waiting briefly
-            tracing::debug!("Attempting graceful termination of process {}", pid);
+            tracing::debug!("Attempting graceful process termination for PID {}", pid);
 
             match wait_for_process_safe(handle, 1000) {
                 Ok(Some(_exit_code)) => {
                     // Process exited gracefully
-                    tracing::debug!("Process {} exited gracefully", pid);
+                    tracing::debug!("Process {} terminated gracefully", pid);
                 }
                 Ok(None) => {
                     // Timeout - force termination
-                    tracing::debug!(
-                        "Process {} did not exit gracefully, forcing termination",
-                        pid
-                    );
+                    tracing::debug!("Process {} did not exit gracefully within timeout, forcing termination", pid);
                     terminate_process_safe(handle, 1).map_err(Self::convert_error)?;
                 }
                 Err(e) => return Err(Self::convert_error(e)),
             }
         } else {
             // Force termination immediately
-            tracing::debug!("Forcing termination of process {}", pid);
+            tracing::debug!("Force terminating process {}", pid);
             terminate_process_safe(handle, 1).map_err(Self::convert_error)?;
         }
 
@@ -321,7 +318,7 @@ impl PlatformManager for WindowsPlatformManager {
 
     fn get_child_processes(&self, process: &Self::Process) -> Result<Vec<u32>, PlatformError> {
         let pid = process.pid();
-        tracing::debug!("Getting child processes for Windows process {}", pid);
+        tracing::debug!("Querying child processes for Windows process {}", pid);
 
         // For simplicity, we'll return an empty list
         // A full implementation would use additional Windows APIs

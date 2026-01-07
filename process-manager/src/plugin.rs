@@ -45,7 +45,7 @@ impl PluginRegistry {
             if plugin.is_applicable(&enhanced_config) {
                 match plugin.enhance_config(enhanced_config.clone()) {
                     Ok(new_config) => {
-                        tracing::debug!("Plugin '{}' enhanced configuration", plugin.name());
+                        tracing::debug!("Configuration enhanced by plugin '{}'", plugin.name());
                         enhanced_config = new_config;
                     }
                     Err(error) => {

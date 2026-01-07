@@ -14,7 +14,7 @@ pub use uuid::Uuid;
 pub mod error;
 mod platform;
 pub mod plugin;
-mod reaper;
+pub mod reaper;
 
 // Re-export core types
 pub use error::{PlatformError, ProcessManagerError};
@@ -22,7 +22,8 @@ use platform::{
     ConcretePlatformManager, ConcretePlatformProcess, PlatformManager, PlatformProcess,
 };
 pub use plugin::{ConfigurationPlugin, PluginRegistry};
-pub use reaper::{ProcessReaper, ReaperMonitor};
+// Reaper types are internal implementation details
+use reaper::ReaperMonitor;
 
 /// Unique identifier for a managed process
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -247,7 +248,7 @@ impl ProcessManager {
                 }
                 Err(e) => {
                     tracing::warn!(
-                        "Failed to spawn process reaper: {}, continuing without reaper",
+                        "Failed to spawn process reaper: {}, continuing without reaper (processes may not be cleaned up on abnormal termination)",
                         e
                     );
                     Arc::new(RwLock::new(None))

@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Unsafe Code Safety Guard",
+  "description": "Monitors Rust files for unsafe code blocks and ensures they are only present in dedicated unsafe crates or prompts for refactoring",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.rs"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "I just edited a Rust file. Please check if it contains any unsafe code blocks. According to the project's safety architecture, unsafe code should only exist in dedicated unsafe crates (like unsafe-windows-process/ or unsafe-macos-process/). If unsafe code is found in the main process-manager crate or other non-unsafe crates, please either: 1) Suggest moving the unsafe code to an appropriate dedicated unsafe crate, or 2) Refactor the code to use safe alternatives. The main process-manager crate must contain zero unsafe blocks."
+  }
+}

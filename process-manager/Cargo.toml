@@ -16,6 +16,9 @@ libc = "0.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 unsafe-macos-process = { path = "../unsafe-macos-process" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+unsafe-linux-process = { path = "../unsafe-linux-process" }
+
 [target.'cfg(windows)'.dependencies]
 unsafe-windows-process = { path = "../unsafe-windows-process" }
 
@@ -47,4 +50,10 @@ path = "../examples/platform_check.rs"
 [[bin]]
 name = "sigkill_victim"
 path = "tests/test_victims/sigkill_victim.rs"
+required-features = ["binary-deps"]
+
+# Standalone reaper process
+[[bin]]
+name = "reaper"
+path = "src/bin/reaper.rs"
 required-features = ["binary-deps"]

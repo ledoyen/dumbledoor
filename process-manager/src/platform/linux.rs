@@ -104,10 +104,7 @@ impl PlatformManager for LinuxPlatformManager {
 
     fn get_child_processes(&self, process: &Self::Process) -> Result<Vec<u32>, PlatformError> {
         // TODO: Implement child process detection on Linux
-        tracing::debug!(
-            "Getting child processes for Linux process {}",
-            process.pid()
-        );
+        tracing::debug!("Querying child processes for Linux process {} (not yet implemented)", process.pid());
         Ok(Vec::new())
     }
 
@@ -117,18 +114,11 @@ impl PlatformManager for LinuxPlatformManager {
     }
 
     fn create_process_group(&self) -> Result<i32, PlatformError> {
-        // TODO: Implement Linux process group creation
+        // Use safe wrapper from unsafe-linux-process crate
         tracing::info!("Creating process group on Linux");
-        unsafe {
-            let pid = libc::getpid();
-            if libc::setpgid(pid, pid) == -1 {
-                let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-                return Err(PlatformError::SystemCallFailed {
-                    syscall: "setpgid".to_string(),
-                    errno,
-                });
-            }
-            Ok(pid)
-        }
+        unsafe_linux_process::safe_create_process_group().map_err(|e| PlatformError::SystemCallFailed {
+            syscall: "setpgid".to_string(),
+            errno: e.raw_os_error().unwrap_or(-1),
+        })
     }
 }

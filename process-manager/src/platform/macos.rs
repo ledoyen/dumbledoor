@@ -223,21 +223,16 @@ impl PlatformManager for MacOSPlatformManager {
         };
 
         if already_installed {
-            tracing::debug!("macOS cleanup handler already installed");
+            tracing::debug!("Process cleanup handlers already installed");
             return Ok(());
         }
 
-        // Don't install signal handlers during tests as they can interfere with the test runner
-        // Also check for common test environment variables
-        if cfg!(test)
-            || std::env::var("CARGO_PKG_NAME").is_ok()
-            || std::env::var("RUST_TEST_THREADS").is_ok()
-            || std::env::var("CARGO_MANIFEST_DIR").is_ok()
-            || std::thread::current()
-                .name()
-                .is_some_and(|name| name.contains("test"))
-        {
-            tracing::debug!("Skipping signal handler installation during tests");
+        // Only skip signal handlers for unit tests, not integration tests
+        // Integration tests (like sigkill_cleanup_test) need signal handlers to work
+        let is_unit_test = cfg!(test) && std::env::var("CARGO_PKG_NAME").is_ok();
+        
+        if is_unit_test {
+            tracing::debug!("Skipping signal handler installation during unit tests");
             {
                 let mut installed = self.cleanup_handler_installed.write().unwrap();
                 *installed = true;
@@ -246,6 +241,17 @@ impl PlatformManager for MacOSPlatformManager {
         }
 
         tracing::info!("Setting up macOS signal-based cleanup handlers");
+
+        // Create a new process group for this ProcessManager using safe wrapper
+        // This ensures all child processes are in the same group for cleanup
+        match unsafe_macos_process::safe_create_process_group() {
+            Ok(pgid) => {
+                tracing::info!("Created new process group: {}", pgid);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create new process group: {}, continuing anyway", e);
+            }
+        }
 
         // Install signal handlers using safe wrapper
         safe_install_signal_handlers(cleanup_signal_handler).map_err(Self::convert_error)?;
@@ -280,10 +286,7 @@ impl PlatformManager for MacOSPlatformManager {
     }
 
     fn get_child_processes(&self, process: &Self::Process) -> Result<Vec<u32>, PlatformError> {
-        tracing::debug!(
-            "Getting child processes for macOS process {}",
-            process.pid()
-        );
+        tracing::debug!("Querying child processes for process {}", process.pid());
 
         safe_find_child_processes(process.pid()).map_err(Self::convert_error)
     }
@@ -303,29 +306,30 @@ impl PlatformManager for MacOSPlatformManager {
 
 /// Signal handler for cleanup operations
 extern "C" fn cleanup_signal_handler(signal: libc::c_int) {
-    // This is a minimal signal handler - in a real implementation,
-    // you might want to set a flag and handle cleanup in the main thread
-    // to avoid signal safety issues
-
     match signal {
         libc::SIGTERM => {
-            // Write to stderr is not signal-safe, but this is for demonstration
-            eprintln!("Received SIGTERM, initiating cleanup");
+            tracing::warn!("Received SIGTERM, initiating process group cleanup");
+            cleanup_process_group();
         }
         libc::SIGINT => {
-            eprintln!("Received SIGINT, initiating cleanup");
+            tracing::warn!("Received SIGINT, initiating process group cleanup");
+            cleanup_process_group();
         }
         _ => {
-            eprintln!("Received unknown signal");
+            tracing::warn!("Received unknown signal {}, initiating cleanup", signal);
+            cleanup_process_group();
         }
     }
+}
 
-    // For now, just set a flag or do minimal cleanup
-    // The aggressive process group killing should only happen in specific scenarios
-    // like when the ProcessManager is explicitly being used for process isolation
-
-    // Don't exit the process here - let the normal program flow handle cleanup
-    // safe_exit(0);
+/// Clean up all processes in the current process group
+fn cleanup_process_group() {
+    tracing::info!("Cleaning up process group");
+    
+    // Use safe wrapper for process group cleanup
+    if let Err(e) = unsafe_macos_process::safe_cleanup_process_group() {
+        tracing::warn!("Failed to cleanup process group: {}", e);
+    }
 }
 
 #[cfg(test)]

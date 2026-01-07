@@ -45,7 +45,16 @@ fn main() {
     println!("Nested mode: {}", nested);
 
     // Create ProcessManager and use it to spawn managed processes
-    let manager = ProcessManager::new().expect("Failed to create ProcessManager");
+    let manager = match ProcessManager::new() {
+        Ok(manager) => {
+            println!("✓ ProcessManager created successfully");
+            manager
+        }
+        Err(e) => {
+            eprintln!("✗ Failed to create ProcessManager: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     let mut all_pids: Vec<u32> = Vec::new();
     let mut process_handles = Vec::new();

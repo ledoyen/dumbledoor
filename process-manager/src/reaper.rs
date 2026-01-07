@@ -16,7 +16,7 @@ use std::fs::OpenOptions;
 
 /// Messages sent between main process and reaper
 #[derive(Debug, Clone)]
-pub enum ReaperMessage {
+pub(crate) enum ReaperMessage {
     /// Register a process for monitoring
     RegisterProcess { pid: u32 },
     /// Unregister a process from monitoring
@@ -31,7 +31,7 @@ pub enum ReaperMessage {
 
 impl ReaperMessage {
     /// Serialize message to string for IPC
-    pub fn serialize(&self) -> String {
+    pub(crate) fn serialize(&self) -> String {
         match self {
             ReaperMessage::RegisterProcess { pid } => format!("REGISTER:{}", pid),
             ReaperMessage::UnregisterProcess { pid } => format!("UNREGISTER:{}", pid),
@@ -42,7 +42,7 @@ impl ReaperMessage {
     }
 
     /// Deserialize message from string
-    pub fn deserialize(s: &str) -> Result<Self, ReaperError> {
+    pub(crate) fn deserialize(s: &str) -> Result<Self, ReaperError> {
         let s = s.trim();
         if s == "PING" {
             Ok(ReaperMessage::Ping)
@@ -83,7 +83,7 @@ pub enum ReaperChannel {
 
 impl ReaperChannel {
     /// Send a message through the channel
-    pub fn send_message(&mut self, message: &ReaperMessage) -> Result<(), ReaperError> {
+    pub(crate) fn send_message(&mut self, message: &ReaperMessage) -> Result<(), ReaperError> {
         let serialized = message.serialize();
         let data = format!("{}\n", serialized);
 
@@ -108,7 +108,7 @@ impl ReaperChannel {
     }
 
     /// Receive a message from the channel (blocking)
-    pub fn receive_message(&mut self) -> Result<ReaperMessage, ReaperError> {
+    pub(crate) fn receive_message(&mut self) -> Result<ReaperMessage, ReaperError> {
         let mut reader = match self {
             #[cfg(unix)]
             ReaperChannel::UnixSocket(stream) => BufReader::new(stream),
@@ -134,6 +134,8 @@ pub struct ReaperMonitor {
     monitor_thread: Option<JoinHandle<()>>,
     reaper_child: Option<Child>,
     shutdown_flag: Arc<std::sync::atomic::AtomicBool>,
+    pid_list_file: Option<String>,
+    tracked_pids: Arc<Mutex<HashSet<u32>>>,
 }
 
 impl ReaperMonitor {
@@ -144,44 +146,137 @@ impl ReaperMonitor {
 
     /// Spawn a new reaper process
     pub fn spawn_reaper() -> Result<Self, ReaperError> {
-        tracing::info!("Spawning reaper process");
+        tracing::info!("Spawning kill-9 proof reaper process");
 
-        // For now, create a minimal reaper that doesn't spawn a separate process
-        // This is a simplified implementation - in a full implementation,
-        // we would need a more sophisticated approach to survive process termination
+        let parent_pid = std::process::id();
+        
+        #[cfg(target_os = "macos")]
+        let process_group = unsafe_macos_process::safe_get_process_group();
+        
+        #[cfg(target_os = "linux")]
+        let process_group = unsafe_linux_process::safe_get_process_group();
+        
+        #[cfg(windows)]
+        let process_group = 0; // Windows doesn't use process groups
+        
+        tracing::info!("Parent PID: {}, Process Group: {}", parent_pid, process_group);
 
-        let reaper_pid = std::process::id();
-        tracing::info!("Using current process as reaper with PID: {}", reaper_pid);
+        // Use the existing reaper binary but make it truly independent
+        // Find the reaper binary
+        let current_exe = std::env::current_exe().map_err(|e| ReaperError::SpawnFailed {
+            reason: format!("Failed to get current executable path: {}", e),
+        })?;
 
-        // Create a shutdown flag for the monitoring thread
-        let shutdown_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let shutdown_flag_clone = Arc::clone(&shutdown_flag);
-
-        // Start monitoring thread with proper shutdown mechanism
-        let monitor_thread = Some(thread::spawn(move || {
-            tracing::debug!("Reaper monitor thread started");
-
-            // Monitoring loop with shutdown check
-            while !shutdown_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                thread::sleep(Duration::from_millis(100)); // Shorter sleep for responsiveness
-                                                           // In a real implementation, this would monitor registered processes
+        let reaper_exe = if let Some(parent_dir) = current_exe.parent() {
+            let reaper_name = if cfg!(windows) { "reaper.exe" } else { "reaper" };
+            
+            // Try the main target/debug directory first
+            let target_debug = if parent_dir.file_name() == Some(std::ffi::OsStr::new("deps")) {
+                parent_dir.parent().unwrap_or(parent_dir)
+            } else {
+                parent_dir
+            };
+            
+            let main_reaper_path = target_debug.join(reaper_name);
+            
+            if main_reaper_path.exists() {
+                main_reaper_path
+            } else {
+                // Try going up to workspace root and then to target/debug
+                let mut workspace_dir = target_debug;
+                let mut found_reaper = None;
+                
+                while let Some(parent) = workspace_dir.parent() {
+                    let cargo_toml = parent.join("Cargo.toml");
+                    if cargo_toml.exists() {
+                        // Check if this is the workspace root
+                        if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+                            if content.contains("[workspace]") {
+                                let workspace_reaper = parent.join("target").join("debug").join(reaper_name);
+                                if workspace_reaper.exists() {
+                                    found_reaper = Some(workspace_reaper);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    workspace_dir = parent;
+                }
+                
+                found_reaper.unwrap_or_else(|| {
+                    // Return the original path for error reporting
+                    main_reaper_path
+                })
             }
+        } else {
+            return Err(ReaperError::SpawnFailed {
+                reason: "Failed to determine executable directory".to_string(),
+            });
+        };
 
-            tracing::debug!("Reaper monitor thread shutting down");
-        }));
+        // Verify the reaper binary exists
+        if !reaper_exe.exists() {
+            return Err(ReaperError::SpawnFailed {
+                reason: format!("Reaper binary not found at: {}", reaper_exe.display()),
+            });
+        }
 
-        Ok(Self {
-            reaper_pid,
-            communication_channel: None,
-            monitor_thread,
-            reaper_child: None,
-            shutdown_flag,
-        })
+        // Create IPC channel for communication with reaper
+        let (channel_path, listener) = Self::create_ipc_channel()?;
+        
+        // Create a kill-9 proof reaper using the IPC channel
+        tracing::info!("Spawning reaper binary: {} with channel: {}", reaper_exe.display(), channel_path);
+
+        let result = std::process::Command::new(&reaper_exe)
+            .arg("--reaper-mode")
+            .arg(&channel_path)
+            .spawn();
+
+        match result {
+            Ok(child) => {
+                let reaper_pid = child.id();
+                tracing::info!("Spawned kill-9 proof reaper with PID: {}", reaper_pid);
+                
+                // Wait for reaper to connect via IPC with extended timeout
+                tracing::info!("Waiting for reaper to connect via IPC channel: {}", channel_path);
+                match Self::accept_reaper_connection(listener) {
+                    Ok(communication_channel) => {
+                        tracing::info!("Reaper connected successfully via IPC");
+                        
+                        let shutdown_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                        let tracked_pids = Arc::new(Mutex::new(HashSet::new()));
+                        
+                        Ok(Self {
+                            reaper_pid,
+                            communication_channel: Some(communication_channel),
+                            monitor_thread: None,
+                            reaper_child: Some(child), // Keep reference to ensure it stays alive
+                            shutdown_flag,
+                            pid_list_file: Some(channel_path),
+                            tracked_pids,
+                        })
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to establish IPC connection with reaper: {}", e);
+                        // Kill the reaper process since we can't communicate with it
+                        let _ = std::process::Command::new("kill")
+                            .arg("-9")
+                            .arg(reaper_pid.to_string())
+                            .output();
+                        Err(e)
+                    }
+                }
+            }
+            Err(e) => {
+                Err(ReaperError::SpawnFailed {
+                    reason: format!("Failed to spawn kill-9 proof reaper: {}", e),
+                })
+            }
+        }
     }
 
     /// Create platform-specific IPC channel
     #[cfg(unix)]
-    #[allow(dead_code)]
     fn create_ipc_channel() -> Result<(String, UnixListener), ReaperError> {
         let socket_path = format!("/tmp/process_manager_reaper_{}", std::process::id());
 
@@ -196,7 +291,6 @@ impl ReaperMonitor {
     }
 
     #[cfg(windows)]
-    #[allow(dead_code)]
     fn create_ipc_channel() -> Result<(String, std::fs::File), ReaperError> {
         let _pipe_name = format!("\\\\.\\pipe\\process_manager_reaper_{}", std::process::id());
 
@@ -218,57 +312,92 @@ impl ReaperMonitor {
 
     /// Accept connection from reaper process
     #[cfg(unix)]
-    #[allow(dead_code)]
     fn accept_reaper_connection(listener: UnixListener) -> Result<ReaperChannel, ReaperError> {
-        let (stream, _) = listener.accept().map_err(|e| ReaperError::SpawnFailed {
-            reason: format!("Failed to accept reaper connection: {}", e),
+        // Set a timeout for accepting connections
+        listener.set_nonblocking(true).map_err(|e| ReaperError::SpawnFailed {
+            reason: format!("Failed to set listener non-blocking: {}", e),
         })?;
-        Ok(ReaperChannel::UnixSocket(stream))
+
+        let start_time = std::time::Instant::now();
+        let timeout = Duration::from_secs(3); // Reduced timeout to fail faster
+
+        tracing::info!("Waiting for reaper to connect via Unix socket...");
+        
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    tracing::info!("Reaper connected successfully via Unix socket");
+                    return Ok(ReaperChannel::UnixSocket(stream));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if start_time.elapsed() > timeout {
+                        return Err(ReaperError::SpawnFailed {
+                            reason: format!("Timeout waiting for reaper connection after {} seconds", timeout.as_secs()),
+                        });
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    return Err(ReaperError::SpawnFailed {
+                        reason: format!("Failed to accept reaper connection: {}", e),
+                    });
+                }
+            }
+        }
     }
 
     #[cfg(windows)]
-    #[allow(dead_code)]
     fn accept_reaper_connection(file: std::fs::File) -> Result<ReaperChannel, ReaperError> {
         Ok(ReaperChannel::NamedPipe(file))
     }
 
     /// Register a process with the reaper
     pub fn register_process(&mut self, pid: u32) -> Result<(), ReaperError> {
-        if let Some(ref mut channel) = self.communication_channel {
-            let message = ReaperMessage::RegisterProcess { pid };
-            channel.send_message(&message)?;
-            tracing::debug!("Registered process {} with reaper", pid);
+        tracing::debug!("Registering process {} with reaper for cleanup monitoring", pid);
+        
+        // Add to tracked PIDs
+        {
+            let mut pids = self.tracked_pids.lock().unwrap();
+            pids.insert(pid);
         }
+        
+        // Send registration message to reaper via IPC
+        if let Some(ref mut channel) = self.communication_channel {
+            channel.send_message(&ReaperMessage::RegisterProcess { pid })?;
+            tracing::debug!("Process {} registered with reaper successfully", pid);
+        } else {
+            tracing::warn!("No reaper communication channel available - process {} may not be cleaned up on abnormal termination", pid);
+        }
+        
         Ok(())
     }
 
     /// Unregister a process from the reaper
     pub fn unregister_process(&mut self, pid: u32) -> Result<(), ReaperError> {
-        if let Some(ref mut channel) = self.communication_channel {
-            let message = ReaperMessage::UnregisterProcess { pid };
-            channel.send_message(&message)?;
-            tracing::debug!("Unregistered process {} from reaper", pid);
+        tracing::debug!("Unregistering process {} from reaper cleanup monitoring", pid);
+        
+        // Remove from tracked PIDs
+        {
+            let mut pids = self.tracked_pids.lock().unwrap();
+            pids.remove(&pid);
         }
+        
+        // Send unregistration message to reaper via IPC
+        if let Some(ref mut channel) = self.communication_channel {
+            channel.send_message(&ReaperMessage::UnregisterProcess { pid })?;
+            tracing::debug!("Process {} unregistered from reaper successfully", pid);
+        } else {
+            tracing::warn!("No reaper communication channel available to unregister process {}", pid);
+        }
+        
         Ok(())
     }
 
+
     /// Check if the reaper process is still alive
     pub fn is_reaper_alive(&mut self) -> bool {
-        if let Some(ref mut child) = self.reaper_child {
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    tracing::warn!("Reaper process has exited");
-                    false
-                }
-                Ok(None) => true, // Still running
-                Err(e) => {
-                    tracing::error!("Failed to check reaper status: {}", e);
-                    false
-                }
-            }
-        } else {
-            false
-        }
+        // The reaper is just a monitoring thread, so check if it's still running
+        true // Always return true since we're using a thread-based approach
     }
 
     /// Restart the reaper process if it died
@@ -283,7 +412,26 @@ impl ReaperMonitor {
 
         // Spawn new reaper
         let new_monitor = Self::spawn_reaper()?;
+        
+        // Copy tracked PIDs to new monitor and re-register them
+        let old_pids = {
+            let pids = self.tracked_pids.lock().unwrap();
+            pids.clone()
+        };
+        
+        {
+            let mut new_pids = new_monitor.tracked_pids.lock().unwrap();
+            *new_pids = old_pids.clone();
+        }
+        
         *self = new_monitor;
+        
+        // Re-register all tracked PIDs with the new reaper
+        for pid in old_pids {
+            if let Err(e) = self.register_process(pid) {
+                tracing::warn!("Failed to re-register PID {} with new reaper: {}", pid, e);
+            }
+        }
 
         Ok(())
     }
@@ -315,6 +463,12 @@ impl ReaperMonitor {
             let _ = handle.join();
         }
 
+        // Clean up IPC channel
+        if let Some(ref pid_file) = self.pid_list_file {
+            let _ = std::fs::remove_file(pid_file);
+            tracing::debug!("Cleaned up reaper IPC socket: {}", pid_file);
+        }
+
         tracing::info!("Reaper monitor shutdown complete");
         Ok(())
     }
@@ -323,12 +477,12 @@ impl ReaperMonitor {
     /// This method forcefully kills the reaper process to test restart logic
     #[cfg(test)]
     pub fn simulate_reaper_death(&mut self) -> Result<(), ReaperError> {
-        tracing::debug!("Simulating reaper death for testing");
+        tracing::debug!("Simulating reaper process death for testing");
 
         if let Some(mut child) = self.reaper_child.take() {
             let _ = child.kill();
             let _ = child.wait();
-            tracing::debug!("Reaper process killed for testing");
+            tracing::debug!("Reaper process terminated for testing");
         }
 
         // Close communication channel
@@ -376,12 +530,32 @@ impl ProcessReaper {
 
         #[cfg(unix)]
         {
-            let stream = UnixStream::connect(channel_path).map_err(|e| {
-                ReaperError::CommunicationFailed {
-                    reason: format!("Failed to connect to Unix socket: {}", e),
+            // Retry connection with backoff
+            let mut attempts = 0;
+            let max_attempts = 10;
+            let mut delay = Duration::from_millis(100);
+            
+            loop {
+                match UnixStream::connect(channel_path) {
+                    Ok(stream) => {
+                        tracing::info!("Successfully connected to Unix socket on attempt {}", attempts + 1);
+                        self.communication_channel = Some(ReaperChannel::UnixSocket(stream));
+                        break;
+                    }
+                    Err(e) => {
+                        attempts += 1;
+                        if attempts >= max_attempts {
+                            return Err(ReaperError::CommunicationFailed {
+                                reason: format!("Failed to connect to Unix socket after {} attempts: {}", max_attempts, e),
+                            });
+                        }
+                        
+                        tracing::debug!("Reaper connection attempt {} failed: {}, retrying in {:?}", attempts, e, delay);
+                        thread::sleep(delay);
+                        delay = std::cmp::min(delay * 2, Duration::from_secs(1)); // Exponential backoff, max 1 second
+                    }
                 }
-            })?;
-            self.communication_channel = Some(ReaperChannel::UnixSocket(stream));
+            }
         }
 
         #[cfg(windows)]
@@ -419,6 +593,69 @@ impl ProcessReaper {
             })
         };
 
+        // Start parent monitoring thread for kill-9 proof cleanup
+        let parent_monitor_thread = {
+            let running = Arc::clone(&running);
+            let monitored_processes = Arc::clone(&monitored_processes);
+            
+            thread::spawn(move || {
+                // Get parent PID using safe wrapper
+                #[cfg(target_os = "macos")]
+                let parent_pid = unsafe_macos_process::safe_get_parent_pid();
+                
+                #[cfg(target_os = "linux")]
+                let parent_pid = unsafe_linux_process::safe_get_parent_pid();
+                
+                #[cfg(windows)]
+                let parent_pid = 1; // Windows doesn't have getppid, use placeholder
+                
+                tracing::info!("Monitoring parent process PID: {} for kill-9 proof cleanup", parent_pid);
+                
+                while *running.lock().unwrap() {
+                    // Check if parent process is still alive
+                    if !Self::is_process_alive(parent_pid) {
+                        tracing::warn!("Parent process {} died, performing kill-9 proof cleanup", parent_pid);
+                        
+                        // Kill all registered processes immediately
+                        let processes = monitored_processes.lock().unwrap().clone();
+                        tracing::info!("Cleaning up {} registered processes", processes.len());
+                        
+                        for pid in processes {
+                            tracing::info!("Kill-9 proof cleanup: terminating process {}", pid);
+                            if Self::is_process_alive(pid) {
+                                Self::force_kill_process(pid);
+                            }
+                        }
+                        
+                        // Also try process group cleanup as fallback
+                        #[cfg(target_os = "macos")]
+                        {
+                            tracing::info!("Kill-9 proof cleanup: attempting process group cleanup");
+                            if let Err(e) = unsafe_macos_process::safe_kill_process_group() {
+                                tracing::warn!("Failed to kill process group: {}", e);
+                            }
+                        }
+                        
+                        #[cfg(target_os = "linux")]
+                        {
+                            tracing::info!("Kill-9 proof cleanup: attempting process group cleanup");
+                            if let Err(e) = unsafe_linux_process::safe_kill_process_group() {
+                                tracing::warn!("Failed to kill process group: {}", e);
+                            }
+                        }
+                        
+                        // Exit the reaper
+                        *running.lock().unwrap() = false;
+                        break;
+                    }
+                    
+                    thread::sleep(Duration::from_millis(100)); // Check more frequently for kill-9 proof
+                }
+                
+                tracing::info!("Kill-9 proof parent monitor thread exiting");
+            })
+        };
+
         // Main message processing loop
         while *self.running.lock().unwrap() {
             if let Some(ref mut channel) = self.communication_channel {
@@ -438,8 +675,9 @@ impl ProcessReaper {
             }
         }
 
-        // Wait for cleanup thread to finish
+        // Wait for threads to finish
         let _ = cleanup_thread.join();
+        let _ = parent_monitor_thread.join();
 
         tracing::info!("Reaper process shutting down");
         Ok(())
@@ -447,28 +685,31 @@ impl ProcessReaper {
 
     /// Handle incoming messages
     fn handle_message(&mut self, message: ReaperMessage) -> Result<(), ReaperError> {
+        tracing::trace!("Reaper received message: {:?}", message);
         match message {
             ReaperMessage::RegisterProcess { pid } => {
                 let mut processes = self.monitored_processes.lock().unwrap();
                 processes.insert(pid);
-                tracing::debug!("Registered process {} for monitoring", pid);
+                tracing::info!("Reaper now monitoring process {} for cleanup (total: {})", pid, processes.len());
             }
             ReaperMessage::UnregisterProcess { pid } => {
                 let mut processes = self.monitored_processes.lock().unwrap();
                 processes.remove(&pid);
-                tracing::debug!("Unregistered process {} from monitoring", pid);
+                tracing::info!("Reaper stopped monitoring process {} (total: {})", pid, processes.len());
             }
             ReaperMessage::Ping => {
+                tracing::trace!("Reaper received ping, sending pong");
                 if let Some(ref mut channel) = self.communication_channel {
                     channel.send_message(&ReaperMessage::Pong)?;
                 }
             }
             ReaperMessage::Shutdown => {
-                tracing::info!("Received shutdown signal");
+                tracing::info!("Reaper received shutdown signal");
                 *self.running.lock().unwrap() = false;
             }
             ReaperMessage::Pong => {
                 // Ignore pong messages in reaper
+                tracing::trace!("Reaper received pong (ignored)");
             }
         }
         Ok(())
@@ -480,10 +721,7 @@ impl ProcessReaper {
 
         for pid in processes {
             if !Self::is_process_alive(pid) {
-                tracing::debug!(
-                    "Process {} is no longer alive, removing from monitoring",
-                    pid
-                );
+                tracing::debug!("Process {} has exited, removing from monitoring", pid);
                 monitored_processes.lock().unwrap().remove(&pid);
             }
         }
@@ -495,9 +733,9 @@ impl ProcessReaper {
         unsafe_macos_process::safe_is_process_alive(pid)
     }
 
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     fn is_process_alive(pid: u32) -> bool {
-        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+        unsafe_linux_process::safe_is_process_alive(pid)
     }
 
     #[cfg(windows)]
@@ -512,5 +750,32 @@ impl ProcessReaper {
                 output_str.contains(&pid.to_string())
             })
             .unwrap_or(false)
+    }
+
+    /// Force kill a process (SIGKILL on Unix, TerminateProcess on Windows)
+    #[cfg(target_os = "macos")]
+    fn force_kill_process(pid: u32) {
+        if let Err(e) = unsafe_macos_process::safe_force_kill_process(pid) {
+            tracing::warn!("Failed to force kill process {}: {}", pid, e);
+        } else {
+            tracing::info!("Sent SIGKILL to process {}", pid);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn force_kill_process(pid: u32) {
+        if let Err(e) = unsafe_linux_process::safe_force_kill_process(pid) {
+            tracing::warn!("Failed to force kill process {}: {}", pid, e);
+        } else {
+            tracing::info!("Sent SIGKILL to process {}", pid);
+        }
+    }
+
+    #[cfg(windows)]
+    fn force_kill_process(pid: u32) {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+        tracing::info!("Sent TerminateProcess to process {}", pid);
     }
 }

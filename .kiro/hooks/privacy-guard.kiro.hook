@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "name": "Implementation Privacy Guard",
+  "description": "Ensures implementation details like the reaper system and platform-specific handling are not exposed as public APIs to library users",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "process-manager/src/*.rs",
+      "process-manager/src/**/*.rs",
+      "unsafe-*/src/*.rs",
+      "unsafe-*/src/**/*.rs"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "I just edited a Rust file in the process-manager or unsafe platform crates. Please review the changes to ensure that implementation details like the reaper system and platform-specific handling are not exposed as public APIs. Check that internal modules, functions, and types maintain proper visibility (pub(crate) or private) and are not accessible to library users. If any implementation details have been made public, suggest making them private or crate-internal to maintain proper API boundaries."
+  }
+}
