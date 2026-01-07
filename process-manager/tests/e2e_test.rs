@@ -18,7 +18,7 @@ fn test_basic_process_lifecycle() {
     init_tracing();
 
     let manager = ProcessManager::new().expect("Failed to create ProcessManager");
-    
+
     // Test process creation and configuration
     let config = create_long_running_config();
     config.validate().expect("Configuration should be valid");
@@ -71,7 +71,7 @@ fn test_multiple_process_management() {
     init_tracing();
 
     let manager = ProcessManager::new().expect("Failed to create ProcessManager");
-    
+
     // Spawn multiple processes to test platform-specific grouping behavior
     let mut handles = Vec::new();
     for i in 0..3 {
@@ -149,7 +149,7 @@ fn test_process_configuration_features() {
     let temp_dir = std::env::temp_dir();
     let test_dir = temp_dir.join("wd_test");
     std::fs::create_dir_all(&test_dir).expect("Failed to create test directory");
-    
+
     let wd_config = create_pwd_test_config(test_dir.clone());
     let wd_handle = manager
         .start_process(wd_config.clone())
@@ -169,7 +169,7 @@ fn test_process_configuration_features() {
     match env_status {
         Ok(ProcessStatus::Exited { exit_code, .. }) => {
             assert_eq!(exit_code, 0, "Environment test should succeed");
-            
+
             if let Some(log_file) = &env_config.log_file {
                 if log_file.exists() {
                     let content = std::fs::read_to_string(log_file)
@@ -194,7 +194,7 @@ fn test_process_configuration_features() {
     match wd_status {
         Ok(ProcessStatus::Exited { exit_code, .. }) => {
             assert_eq!(exit_code, 0, "Working directory test should succeed");
-            
+
             if let Some(log_file) = &wd_config.log_file {
                 if log_file.exists() {
                     let output = std::fs::read_to_string(log_file)
@@ -282,7 +282,10 @@ fn test_error_handling_and_edge_cases() {
                     assert!(!error.is_empty(), "Failure error should not be empty");
                 }
                 Ok(ProcessStatus::Exited { exit_code, .. }) => {
-                    assert_ne!(exit_code, 0, "Invalid command should exit with non-zero code");
+                    assert_ne!(
+                        exit_code, 0,
+                        "Invalid command should exit with non-zero code"
+                    );
                 }
                 _ => {
                     // Other states might be valid depending on implementation
@@ -297,10 +300,13 @@ fn test_error_handling_and_edge_cases() {
     let result = empty_config.validate();
     assert!(result.is_err(), "Empty command should fail validation");
 
-    let invalid_wd_config = ProcessConfig::new("echo")
-        .working_directory("/nonexistent/directory/that/does/not/exist");
+    let invalid_wd_config =
+        ProcessConfig::new("echo").working_directory("/nonexistent/directory/that/does/not/exist");
     let result = invalid_wd_config.validate();
-    assert!(result.is_err(), "Invalid working directory should fail validation");
+    assert!(
+        result.is_err(),
+        "Invalid working directory should fail validation"
+    );
 
     // Test 4c: Querying status of nonexistent process handle
     let fake_handle = ProcessHandle::new();
@@ -315,7 +321,10 @@ fn test_error_handling_and_edge_cases() {
             );
         }
         Ok(status) => {
-            panic!("Should not return status for nonexistent handle, got: {:?}", status);
+            panic!(
+                "Should not return status for nonexistent handle, got: {:?}",
+                status
+            );
         }
     }
 
@@ -424,9 +433,16 @@ fn test_sigkill_cleanup_guarantee() {
     };
 
     // Verify all processes are running
-    assert!(process_exists(victim_pid), "Victim process should be running");
+    assert!(
+        process_exists(victim_pid),
+        "Victim process should be running"
+    );
     for &pid in &child_pids {
-        assert!(process_exists(pid), "Child process {} should be running", pid);
+        assert!(
+            process_exists(pid),
+            "Child process {} should be running",
+            pid
+        );
     }
 
     // Forcefully terminate victim process (SIGKILL equivalent)
@@ -441,7 +457,10 @@ fn test_sigkill_cleanup_guarantee() {
 
     // Wait for platform-specific cleanup to complete
     let cleanup_timeout = get_cleanup_timeout();
-    println!("Waiting {} seconds for cleanup to complete...", cleanup_timeout.as_secs());
+    println!(
+        "Waiting {} seconds for cleanup to complete...",
+        cleanup_timeout.as_secs()
+    );
     thread::sleep(cleanup_timeout);
 
     // Verify all child processes are cleaned up
@@ -453,8 +472,11 @@ fn test_sigkill_cleanup_guarantee() {
     }
 
     if !surviving_children.is_empty() {
-        eprintln!("FAILURE: Child processes still running after cleanup: {:?}", surviving_children);
-        
+        eprintln!(
+            "FAILURE: Child processes still running after cleanup: {:?}",
+            surviving_children
+        );
+
         // Try to clean up manually for test hygiene
         for &pid in &surviving_children {
             let _ = kill_process(pid);
@@ -521,7 +543,10 @@ fn get_victim_executable_path() -> PathBuf {
     if !path.exists() {
         build_victim_binary();
         if !path.exists() {
-            panic!("Failed to build or find sigkill_victim binary at: {}", path.display());
+            panic!(
+                "Failed to build or find sigkill_victim binary at: {}",
+                path.display()
+            );
         }
     }
 
@@ -559,7 +584,13 @@ fn build_victim_binary() {
     }
 
     let output = std::process::Command::new("cargo")
-        .args(["build", "--bin", "sigkill_victim", "--features", "binary-deps"])
+        .args([
+            "build",
+            "--bin",
+            "sigkill_victim",
+            "--features",
+            "binary-deps",
+        ])
         .current_dir(&current_dir)
         .output()
         .expect("Failed to execute cargo build command");
@@ -665,7 +696,9 @@ fn kill_process(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
                     if stderr.contains("No such process") {
                         return Ok(());
                     }
-                    return Err(format!("Failed to send SIGKILL to process {}: {}", pid, stderr).into());
+                    return Err(
+                        format!("Failed to send SIGKILL to process {}: {}", pid, stderr).into(),
+                    );
                 }
             }
             Err(e) => {

@@ -236,7 +236,10 @@ impl PlatformManager for MacOSPlatformManager {
                 tracing::info!("Created new process group: {}", pgid);
             }
             Err(e) => {
-                tracing::warn!("Failed to create new process group: {}, continuing anyway", e);
+                tracing::warn!(
+                    "Failed to create new process group: {}, continuing anyway",
+                    e
+                );
             }
         }
 
@@ -312,7 +315,7 @@ extern "C" fn cleanup_signal_handler(signal: libc::c_int) {
 /// Clean up all processes in the current process group
 fn cleanup_process_group() {
     tracing::info!("Cleaning up process group");
-    
+
     // Use safe wrapper for process group cleanup
     if let Err(e) = unsafe_macos_process::safe_cleanup_process_group() {
         tracing::warn!("Failed to cleanup process group: {}", e);

@@ -302,7 +302,9 @@ pub fn get_cleanup_timeout() -> std::time::Duration {
 pub fn get_processes_by_pattern(pattern: &str) -> Vec<u32> {
     #[cfg(target_os = "windows")]
     {
-        let output = std::process::Command::new("tasklist").args(["/fo", "csv"]).output();
+        let output = std::process::Command::new("tasklist")
+            .args(["/fo", "csv"])
+            .output();
 
         match output {
             Ok(output) => {

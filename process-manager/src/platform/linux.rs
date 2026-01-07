@@ -104,7 +104,10 @@ impl PlatformManager for LinuxPlatformManager {
 
     fn get_child_processes(&self, process: &Self::Process) -> Result<Vec<u32>, PlatformError> {
         // TODO: Implement child process detection on Linux
-        tracing::debug!("Querying child processes for Linux process {} (not yet implemented)", process.pid());
+        tracing::debug!(
+            "Querying child processes for Linux process {} (not yet implemented)",
+            process.pid()
+        );
         Ok(Vec::new())
     }
 
@@ -116,9 +119,11 @@ impl PlatformManager for LinuxPlatformManager {
     fn create_process_group(&self) -> Result<i32, PlatformError> {
         // Use safe wrapper from unsafe-linux-process crate
         tracing::info!("Creating process group on Linux");
-        unsafe_linux_process::safe_create_process_group().map_err(|e| PlatformError::SystemCallFailed {
-            syscall: "setpgid".to_string(),
-            errno: e.raw_os_error().unwrap_or(-1),
+        unsafe_linux_process::safe_create_process_group().map_err(|e| {
+            PlatformError::SystemCallFailed {
+                syscall: "setpgid".to_string(),
+                errno: e.raw_os_error().unwrap_or(-1),
+            }
         })
     }
 }
@@ -146,7 +151,7 @@ mod tests {
     #[test]
     fn test_namespace_detection() {
         let manager = LinuxPlatformManager::new().expect("Failed to create manager");
-        
+
         // Currently always false in placeholder implementation
         assert!(!manager.use_namespaces);
         assert!(manager.needs_reaper);
@@ -225,7 +230,7 @@ mod tests {
     #[test]
     fn test_reaper_requirement() {
         let manager = LinuxPlatformManager::new().expect("Failed to create manager");
-        
+
         // Should need reaper when namespaces are not available
         assert!(manager.needs_reaper());
     }

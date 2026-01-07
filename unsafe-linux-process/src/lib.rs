@@ -42,7 +42,7 @@ pub fn safe_get_parent_pid() -> u32 {
 #[cfg(target_os = "linux")]
 pub fn safe_force_kill_process(pid: u32) -> Result<(), UnsafeLinuxError> {
     let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
-    
+
     if result == -1 {
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
         if errno == libc::ESRCH {
@@ -55,7 +55,7 @@ pub fn safe_force_kill_process(pid: u32) -> Result<(), UnsafeLinuxError> {
             });
         }
     }
-    
+
     Ok(())
 }
 
@@ -64,7 +64,7 @@ pub fn safe_force_kill_process(pid: u32) -> Result<(), UnsafeLinuxError> {
 pub fn safe_kill_process_group() -> Result<(), UnsafeLinuxError> {
     let process_group = unsafe { libc::getpgrp() };
     let result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
-    
+
     if result == -1 {
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
         if errno == libc::ESRCH {
@@ -77,7 +77,7 @@ pub fn safe_kill_process_group() -> Result<(), UnsafeLinuxError> {
             });
         }
     }
-    
+
     Ok(())
 }
 
@@ -85,7 +85,7 @@ pub fn safe_kill_process_group() -> Result<(), UnsafeLinuxError> {
 #[cfg(target_os = "linux")]
 pub fn safe_create_process_group() -> Result<i32, UnsafeLinuxError> {
     let pid = unsafe { libc::getpid() };
-    
+
     if unsafe { libc::setpgid(pid, pid) } == -1 {
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
         return Err(UnsafeLinuxError::SystemCallFailed {
@@ -93,7 +93,7 @@ pub fn safe_create_process_group() -> Result<i32, UnsafeLinuxError> {
             errno,
         });
     }
-    
+
     Ok(pid)
 }
 

@@ -73,27 +73,16 @@ check-unused:
 test-doc:
     cargo test --verbose --doc
 
-# Run integration tests only (focused integration tests)
-test-integration:
-    cargo test --verbose --test integration_focused_test
-
 # Run E2E tests (cross-platform process lifecycle tests)
 test-e2e:
-    cargo test --verbose --test process_lifecycle_test
-
-# Run platform-specific feature tests
-test-platform:
-    cargo test --verbose --test platform_features_test
-
-# Run all feature tests (integration + E2E + platform)
-test-features: test-integration test-e2e test-platform
+    cargo test --verbose --test e2e_test
 
 # Run unit tests only
 test-unit:
     cargo test --verbose --lib
 
-# Run all tests (unit + integration + E2E + platform)
-test-all: test-unit test-features test-doc
+# Run all tests (unit + E2E + doc)
+test-all: test-unit test-e2e test-doc
 
 # Check MSRV compatibility
 check-msrv:

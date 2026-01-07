@@ -538,7 +538,7 @@ pub fn safe_get_parent_pid() -> u32 {
 #[cfg(target_os = "macos")]
 pub fn safe_force_kill_process(pid: u32) -> Result<(), UnsafeMacOSError> {
     let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
-    
+
     if result == -1 {
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
         if errno == libc::ESRCH {
@@ -551,7 +551,7 @@ pub fn safe_force_kill_process(pid: u32) -> Result<(), UnsafeMacOSError> {
             });
         }
     }
-    
+
     Ok(())
 }
 
@@ -560,7 +560,7 @@ pub fn safe_force_kill_process(pid: u32) -> Result<(), UnsafeMacOSError> {
 pub fn safe_kill_process_group() -> Result<(), UnsafeMacOSError> {
     let process_group = unsafe { libc::getpgrp() };
     let result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
-    
+
     if result == -1 {
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
         if errno == libc::ESRCH {
@@ -573,7 +573,7 @@ pub fn safe_kill_process_group() -> Result<(), UnsafeMacOSError> {
             });
         }
     }
-    
+
     Ok(())
 }
 
@@ -581,7 +581,7 @@ pub fn safe_kill_process_group() -> Result<(), UnsafeMacOSError> {
 #[cfg(target_os = "macos")]
 pub fn safe_cleanup_process_group() -> Result<(), UnsafeMacOSError> {
     let process_group = unsafe { libc::getpgrp() };
-    
+
     // First try graceful termination with SIGTERM
     let term_result = unsafe { libc::kill(-process_group, libc::SIGTERM) };
     if term_result == -1 {
@@ -593,10 +593,10 @@ pub fn safe_cleanup_process_group() -> Result<(), UnsafeMacOSError> {
             });
         }
     }
-    
+
     // Give processes a moment to terminate gracefully
     std::thread::sleep(std::time::Duration::from_millis(100));
-    
+
     // Force kill any remaining processes
     let kill_result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
     if kill_result == -1 {
@@ -608,7 +608,7 @@ pub fn safe_cleanup_process_group() -> Result<(), UnsafeMacOSError> {
             });
         }
     }
-    
+
     Ok(())
 }
 

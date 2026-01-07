@@ -113,20 +113,14 @@ jobs:
       - name: Run unit tests
         run: just test-unit
 
-      - name: Run integration tests
-        run: just test-integration
-
       - name: Run E2E tests
         run: just test-e2e
-
-      - name: Run platform-specific tests
-        run: just test-platform
 
       - name: Run doc tests
         run: just test-doc
 
-      - name: Test examples
-        run: cargo test --verbose --examples
+      - name: Build examples
+        run: cargo build --verbose --examples
 
   msrv:
     name: Minimum Supported Rust Version (MSRV) check

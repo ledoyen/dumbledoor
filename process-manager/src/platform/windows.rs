@@ -246,7 +246,10 @@ impl PlatformManager for WindowsPlatformManager {
                 }
                 Ok(None) => {
                     // Timeout - force termination
-                    tracing::debug!("Process {} did not exit gracefully within timeout, forcing termination", pid);
+                    tracing::debug!(
+                        "Process {} did not exit gracefully within timeout, forcing termination",
+                        pid
+                    );
                     terminate_process_safe(handle, 1).map_err(Self::convert_error)?;
                 }
                 Err(e) => return Err(Self::convert_error(e)),
