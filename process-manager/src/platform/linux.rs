@@ -122,3 +122,111 @@ impl PlatformManager for LinuxPlatformManager {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ProcessConfig;
+
+    #[test]
+    fn test_linux_platform_manager_creation() {
+        let manager = LinuxPlatformManager::new();
+        assert!(
+            manager.is_ok(),
+            "LinuxPlatformManager should be created successfully"
+        );
+    }
+
+    #[test]
+    fn test_linux_process_creation() {
+        let process = LinuxProcess { pid: 1234 };
+        assert_eq!(process.pid(), 1234);
+    }
+
+    #[test]
+    fn test_namespace_detection() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        
+        // Currently always false in placeholder implementation
+        assert!(!manager.use_namespaces);
+        assert!(manager.needs_reaper);
+    }
+
+    #[test]
+    fn test_process_spawning_placeholder() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        let config = ProcessConfig::new("/bin/echo").args(["test"]);
+
+        let process = manager
+            .spawn_process(&config)
+            .expect("Failed to spawn process");
+
+        // Placeholder implementation returns fixed PID
+        assert_eq!(process.pid(), 12345);
+    }
+
+    #[test]
+    fn test_process_termination_placeholder() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        let process = LinuxProcess { pid: 1234 };
+
+        let result = manager.terminate_process(&process, true);
+        assert!(result.is_ok(), "Process termination should succeed");
+    }
+
+    #[test]
+    fn test_process_status_query_placeholder() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        let process = LinuxProcess { pid: 1234 };
+
+        let status = manager
+            .query_process_status(&process)
+            .expect("Failed to query status");
+
+        match status {
+            ProcessStatus::Running { pid } => {
+                assert_eq!(pid, 1234);
+            }
+            _ => panic!("Expected Running status"),
+        }
+    }
+
+    #[test]
+    fn test_cleanup_handler_setup() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        let result = manager.setup_cleanup_handler();
+        assert!(result.is_ok(), "Cleanup handler setup should succeed");
+    }
+
+    #[test]
+    fn test_cleanup_all_processes() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        let process1 = LinuxProcess { pid: 1234 };
+        let process2 = LinuxProcess { pid: 5678 };
+        let processes = vec![&process1, &process2];
+
+        let result = manager.cleanup_all_processes(&processes);
+        assert!(result.is_ok(), "Cleanup all processes should succeed");
+    }
+
+    #[test]
+    fn test_child_process_detection() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        let process = LinuxProcess { pid: 1234 };
+
+        let children = manager
+            .get_child_processes(&process)
+            .expect("Failed to get child processes");
+
+        // Placeholder implementation returns empty vec
+        assert!(children.is_empty());
+    }
+
+    #[test]
+    fn test_reaper_requirement() {
+        let manager = LinuxPlatformManager::new().expect("Failed to create manager");
+        
+        // Should need reaper when namespaces are not available
+        assert!(manager.needs_reaper());
+    }
+}

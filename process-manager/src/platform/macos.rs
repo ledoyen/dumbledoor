@@ -227,19 +227,6 @@ impl PlatformManager for MacOSPlatformManager {
             return Ok(());
         }
 
-        // Only skip signal handlers for unit tests, not integration tests
-        // Integration tests (like sigkill_cleanup_test) need signal handlers to work
-        let is_unit_test = cfg!(test) && std::env::var("CARGO_PKG_NAME").is_ok();
-        
-        if is_unit_test {
-            tracing::debug!("Skipping signal handler installation during unit tests");
-            {
-                let mut installed = self.cleanup_handler_installed.write().unwrap();
-                *installed = true;
-            }
-            return Ok(());
-        }
-
         tracing::info!("Setting up macOS signal-based cleanup handlers");
 
         // Create a new process group for this ProcessManager using safe wrapper

@@ -278,7 +278,20 @@ impl ReaperMonitor {
     /// Create platform-specific IPC channel
     #[cfg(unix)]
     fn create_ipc_channel() -> Result<(String, UnixListener), ReaperError> {
-        let socket_path = format!("/tmp/process_manager_reaper_{}", std::process::id());
+        use std::time::{SystemTime, UNIX_EPOCH};
+        
+        // Add timestamp and random component to make socket path unique per ProcessManager instance
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let random_id = uuid::Uuid::new_v4().simple().to_string();
+        let socket_path = format!(
+            "/tmp/process_manager_reaper_{}_{}_{}",
+            std::process::id(),
+            timestamp,
+            &random_id[..8] // Use first 8 chars of UUID for brevity
+        );
 
         // Remove existing socket if it exists
         let _ = std::fs::remove_file(&socket_path);
