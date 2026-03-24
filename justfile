@@ -84,6 +84,18 @@ test-unit:
 # Run all tests (unit + E2E + doc)
 test-all: test-unit test-e2e test-doc
 
+# Cross-compile check for all supported platforms (catches platform-specific breakage)
+check-cross:
+    @echo "Checking native platform..."
+    cargo check --all-targets
+    @echo "Checking x86_64-unknown-linux-gnu..."
+    cargo check --target x86_64-unknown-linux-gnu
+    @echo "Checking x86_64-pc-windows-msvc..."
+    cargo check --target x86_64-pc-windows-msvc
+    @echo "Checking aarch64-apple-darwin..."
+    cargo check --target aarch64-apple-darwin
+    @echo "All platforms compile successfully!"
+
 # Check MSRV compatibility
 check-msrv:
     cargo +1.92.0 check --all-targets

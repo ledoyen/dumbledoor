@@ -3,6 +3,8 @@
 //! This library provides reliable process management across Linux, macOS, and Windows
 //! with explicit configuration and guaranteed cleanup capabilities.
 
+#![forbid(unsafe_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};

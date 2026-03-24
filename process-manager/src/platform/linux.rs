@@ -122,7 +122,10 @@ impl PlatformManager for LinuxPlatformManager {
         unsafe_linux_process::safe_create_process_group().map_err(|e| {
             PlatformError::SystemCallFailed {
                 syscall: "setpgid".to_string(),
-                errno: e.raw_os_error().unwrap_or(-1),
+                errno: match e {
+                    unsafe_linux_process::UnsafeLinuxError::SystemCallFailed { errno, .. } => errno,
+                    _ => -1,
+                },
             }
         })
     }

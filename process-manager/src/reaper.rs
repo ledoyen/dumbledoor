@@ -2,6 +2,7 @@
 
 use crate::error::ReaperError;
 use std::collections::HashSet;
+#[cfg(unix)]
 use std::io::{BufRead, BufReader, Write};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
@@ -76,6 +77,7 @@ pub enum ReaperChannel {
     UnixSocket(UnixStream),
 }
 
+#[cfg(unix)]
 impl ReaperChannel {
     /// Send a message through the channel
     pub(crate) fn send_message(&mut self, message: &ReaperMessage) -> Result<(), ReaperError> {
@@ -83,7 +85,6 @@ impl ReaperChannel {
         let data = format!("{}\n", serialized);
 
         match self {
-            #[cfg(unix)]
             ReaperChannel::UnixSocket(stream) => {
                 stream.write_all(data.as_bytes()).map_err(|e| {
                     ReaperError::CommunicationFailed {
@@ -98,7 +99,6 @@ impl ReaperChannel {
     /// Receive a message from the channel (blocking)
     pub(crate) fn receive_message(&mut self) -> Result<ReaperMessage, ReaperError> {
         let mut reader = match self {
-            #[cfg(unix)]
             ReaperChannel::UnixSocket(stream) => BufReader::new(stream),
         };
 
@@ -131,6 +131,7 @@ impl ReaperMonitor {
     }
 
     /// Spawn a new reaper process
+    #[cfg(unix)]
     pub fn spawn_reaper() -> Result<Self, ReaperError> {
         tracing::info!("Spawning kill-9 proof reaper process");
 
@@ -138,15 +139,12 @@ impl ReaperMonitor {
 
         #[cfg(target_os = "macos")]
         let process_group = unsafe_macos_process::safe_get_process_group();
-
         #[cfg(target_os = "linux")]
         let process_group = unsafe_linux_process::safe_get_process_group();
-
-        tracing::info!(
-            "Parent PID: {}, Process Group: {}",
-            parent_pid,
-            process_group
-        );
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        tracing::info!("Parent PID: {}, Process Group: {}", parent_pid, process_group);
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        tracing::info!("Parent PID: {}", parent_pid);
 
         // Use the existing reaper binary but make it truly independent
         // Find the reaper binary
@@ -337,6 +335,14 @@ impl ReaperMonitor {
         }
     }
 
+    /// Spawn a new reaper process (stub for non-Unix platforms)
+    #[cfg(not(unix))]
+    pub fn spawn_reaper() -> Result<Self, ReaperError> {
+        Err(ReaperError::SpawnFailed {
+            reason: "Reaper is not supported on this platform".to_string(),
+        })
+    }
+
     /// Register a process with the reaper
     pub fn register_process(&mut self, pid: u32) -> Result<(), ReaperError> {
         tracing::debug!(
@@ -351,6 +357,7 @@ impl ReaperMonitor {
         }
 
         // Send registration message to reaper via IPC
+        #[cfg(unix)]
         if let Some(ref mut channel) = self.communication_channel {
             channel.send_message(&ReaperMessage::RegisterProcess { pid })?;
             tracing::debug!("Process {} registered with reaper successfully", pid);
@@ -375,6 +382,7 @@ impl ReaperMonitor {
         }
 
         // Send unregistration message to reaper via IPC
+        #[cfg(unix)]
         if let Some(ref mut channel) = self.communication_channel {
             channel.send_message(&ReaperMessage::UnregisterProcess { pid })?;
             tracing::debug!("Process {} unregistered from reaper successfully", pid);
@@ -438,6 +446,7 @@ impl ReaperMonitor {
         self.shutdown_flag
             .store(true, std::sync::atomic::Ordering::Relaxed);
 
+        #[cfg(unix)]
         if let Some(ref mut channel) = self.communication_channel {
             let _ = channel.send_message(&ReaperMessage::Shutdown);
         }
@@ -519,6 +528,7 @@ impl ProcessReaper {
     }
 
     /// Initialize the reaper with IPC channel
+    #[cfg(unix)]
     pub fn initialize(&mut self, channel_path: &str) -> Result<(), ReaperError> {
         tracing::info!("Initializing reaper with channel: {}", channel_path);
 
@@ -563,6 +573,14 @@ impl ProcessReaper {
         Ok(())
     }
 
+    /// Initialize the reaper with IPC channel (stub for non-Unix platforms)
+    #[cfg(not(unix))]
+    pub fn initialize(&mut self, _channel_path: &str) -> Result<(), ReaperError> {
+        Err(ReaperError::SpawnFailed {
+            reason: "Reaper is not supported on this platform".to_string(),
+        })
+    }
+
     /// Run the reaper main loop
     pub fn run(&mut self) -> Result<(), ReaperError> {
         tracing::info!("Running reaper process");
@@ -589,72 +607,81 @@ impl ProcessReaper {
             let monitored_processes = Arc::clone(&monitored_processes);
 
             thread::spawn(move || {
-                // Get parent PID using safe wrapper
-                #[cfg(target_os = "macos")]
-                let parent_pid = unsafe_macos_process::safe_get_parent_pid();
+                #[cfg(not(unix))]
+                let _ = (&running, &monitored_processes);
 
-                #[cfg(target_os = "linux")]
-                let parent_pid = unsafe_linux_process::safe_get_parent_pid();
+                #[cfg(unix)]
+                {
+                    // Get parent PID using safe wrapper
+                    #[cfg(target_os = "macos")]
+                    let parent_pid = unsafe_macos_process::safe_get_parent_pid();
+                    #[cfg(target_os = "linux")]
+                    let parent_pid = unsafe_linux_process::safe_get_parent_pid();
 
-                tracing::info!(
-                    "Monitoring parent process PID: {} for kill-9 proof cleanup",
-                    parent_pid
-                );
+                    tracing::info!(
+                        "Monitoring parent process PID: {} for kill-9 proof cleanup",
+                        parent_pid
+                    );
 
-                while *running.lock().unwrap() {
-                    // Check if parent process is still alive
-                    if !Self::is_process_alive(parent_pid) {
-                        tracing::warn!(
-                            "Parent process {} died, performing kill-9 proof cleanup",
-                            parent_pid
-                        );
-
-                        // Kill all registered processes immediately
-                        let processes = monitored_processes.lock().unwrap().clone();
-                        tracing::info!("Cleaning up {} registered processes", processes.len());
-
-                        for pid in processes {
-                            tracing::info!("Kill-9 proof cleanup: terminating process {}", pid);
-                            if Self::is_process_alive(pid) {
-                                Self::force_kill_process(pid);
-                            }
-                        }
-
-                        // Also try process group cleanup as fallback
-                        #[cfg(target_os = "macos")]
-                        {
-                            tracing::info!(
-                                "Kill-9 proof cleanup: attempting process group cleanup"
+                    while *running.lock().unwrap() {
+                        // Check if parent process is still alive
+                        if !Self::is_process_alive(parent_pid) {
+                            tracing::warn!(
+                                "Parent process {} died, performing kill-9 proof cleanup",
+                                parent_pid
                             );
-                            if let Err(e) = unsafe_macos_process::safe_kill_process_group() {
-                                tracing::warn!("Failed to kill process group: {}", e);
+
+                            // Kill all registered processes immediately
+                            let processes = monitored_processes.lock().unwrap().clone();
+                            tracing::info!("Cleaning up {} registered processes", processes.len());
+
+                            for pid in processes {
+                                tracing::info!(
+                                    "Kill-9 proof cleanup: terminating process {}",
+                                    pid
+                                );
+                                if Self::is_process_alive(pid) {
+                                    Self::force_kill_process(pid);
+                                }
                             }
+
+                            // Also try process group cleanup as fallback
+                            #[cfg(target_os = "macos")]
+                            {
+                                tracing::info!(
+                                    "Kill-9 proof cleanup: attempting process group cleanup"
+                                );
+                                if let Err(e) = unsafe_macos_process::safe_kill_process_group() {
+                                    tracing::warn!("Failed to kill process group: {}", e);
+                                }
+                            }
+
+                            #[cfg(target_os = "linux")]
+                            {
+                                tracing::info!(
+                                    "Kill-9 proof cleanup: attempting process group cleanup"
+                                );
+                                if let Err(e) = unsafe_linux_process::safe_kill_process_group() {
+                                    tracing::warn!("Failed to kill process group: {}", e);
+                                }
+                            }
+
+                            // Exit the reaper
+                            *running.lock().unwrap() = false;
+                            break;
                         }
 
-                        #[cfg(target_os = "linux")]
-                        {
-                            tracing::info!(
-                                "Kill-9 proof cleanup: attempting process group cleanup"
-                            );
-                            if let Err(e) = unsafe_linux_process::safe_kill_process_group() {
-                                tracing::warn!("Failed to kill process group: {}", e);
-                            }
-                        }
-
-                        // Exit the reaper
-                        *running.lock().unwrap() = false;
-                        break;
+                        thread::sleep(Duration::from_millis(100)); // Check more frequently for kill-9 proof
                     }
 
-                    thread::sleep(Duration::from_millis(100)); // Check more frequently for kill-9 proof
+                    tracing::info!("Kill-9 proof parent monitor thread exiting");
                 }
-
-                tracing::info!("Kill-9 proof parent monitor thread exiting");
             })
         };
 
         // Main message processing loop
         while *self.running.lock().unwrap() {
+            #[cfg(unix)]
             if let Some(ref mut channel) = self.communication_channel {
                 match channel.receive_message() {
                     Ok(message) => {
@@ -704,6 +731,7 @@ impl ProcessReaper {
             }
             ReaperMessage::Ping => {
                 tracing::trace!("Reaper received ping, sending pong");
+                #[cfg(unix)]
                 if let Some(ref mut channel) = self.communication_channel {
                     channel.send_message(&ReaperMessage::Pong)?;
                 }
@@ -736,12 +764,16 @@ impl ProcessReaper {
     fn is_process_alive(pid: u32) -> bool {
         #[cfg(target_os = "macos")]
         {
-            unsafe_macos_process::safe_is_process_alive(pid)
+            return unsafe_macos_process::safe_is_process_alive(pid);
         }
-
         #[cfg(target_os = "linux")]
         {
-            unsafe_linux_process::safe_is_process_alive(pid)
+            return unsafe_linux_process::safe_is_process_alive(pid);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            let _ = pid;
+            false
         }
     }
 
@@ -764,5 +796,8 @@ impl ProcessReaper {
                 tracing::info!("Sent SIGKILL to process {}", pid);
             }
         }
+
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let _ = pid;
     }
 }

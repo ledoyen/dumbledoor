@@ -3,6 +3,8 @@
 //! This binary runs as a separate process that survives the death of the
 //! ProcessManager parent process and cleans up any registered child processes.
 
+#![forbid(unsafe_code)]
+
 use process_manager::reaper::ProcessReaper;
 use std::env;
 
