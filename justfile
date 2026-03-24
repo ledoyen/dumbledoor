@@ -12,9 +12,11 @@ build:
 test:
     cargo test --verbose --all-targets
 
-# Run clippy linter with strict settings
+# Run clippy linter with strict settings, and verify documentation builds clean.
+# Both run with -D warnings so any warning becomes a local error, matching CI.
 lint:
     cargo clippy --all-targets --all-features -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
 # Format code with rustfmt
 format:
@@ -75,9 +77,16 @@ test-doc:
 
 # Run E2E tests (cross-platform process lifecycle tests)
 # Builds reaper binary first — required by macOS e2e tests for process cleanup
+# Hard 5-minute timeout: a hanging test should never block indefinitely.
 test-e2e:
+    #!/usr/bin/env bash
+    set -euo pipefail
     cargo build -p process-manager --features binary-deps
-    cargo test --verbose --test e2e_test
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 300 cargo test --verbose --test e2e_test
+    else
+        cargo test --verbose --test e2e_test
+    fi
 
 # Run unit tests only
 test-unit:

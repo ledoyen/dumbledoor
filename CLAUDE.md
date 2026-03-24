@@ -25,7 +25,7 @@ Each platform module is conditionally compiled.
 
 **This project targets Linux, macOS, and Windows. Every change MUST compile on all three.**
 
-Before considering any change complete, run **all four** of these in order:
+Before considering any change complete, run **all four** of these in order (run each separately — do not chain with `&&` as a grep or similar in the pipeline can silently skip later steps):
 ```sh
 just format
 just lint
@@ -34,7 +34,7 @@ just check-cross
 ```
 
 * `just format` — applies rustfmt. Always run first, never manually reformat.
-* `just lint` — runs Clippy with `-D warnings`. All warnings are errors.
+* `just lint` — runs Clippy with `-D warnings`, then `cargo doc` with `-D warnings`. All warnings are errors. This matches what CI checks in the Format and Lint job.
 * `just test` — runs the full test suite on the current platform (unit + e2e + doc). `just test-e2e` can also be run standalone; it builds the reaper binary first, which is required for macOS e2e tests.
 * `just check-cross` — cross-compiles **and lints** all three targets. `just lint` only runs on the current platform, so platform-specific dead code or warnings (e.g. unused fields on Linux or Windows) are only visible via cross-linting. Catches:
   - Missing `#[cfg(...)]` guards

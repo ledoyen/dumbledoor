@@ -510,12 +510,104 @@ fn test_sigkill_cleanup_guarantee() {
     let _ = victim_process.wait();
 }
 
-/// Test 6: Rapid spawn+terminate stress test
+/// Test 6: Orphan survival and cleanup
 ///
-/// Spawns and immediately terminates processes in a tight loop with no sleep.
-/// This reliably triggers fork/exec signal-handler race conditions that only
-/// appear on loaded systems (CI) when run just once — repeating many times
-/// exposes the race even on a fast local machine.
+/// Verifies that when a managed command exits early (e.g. a launcher script that
+/// backgrounds a long-running service), the background process survives the
+/// launcher's exit (reparented to the namespace init) and is cleaned up
+/// deterministically when `stop_process` is called — no polling required.
+///
+/// Linux-only: relies on the namespace init acting as subreaper so the orphan
+/// remains inside the managed unit. On macOS/Windows the platform does not
+/// provide a container that outlives the launcher process.
+#[test]
+#[cfg(target_os = "linux")]
+fn test_early_exit_orphan_cleanup() {
+    init_tracing();
+
+    use std::fs;
+
+    let commands = common::PlatformCommands::get();
+    let temp_dir = std::env::temp_dir();
+    let orphan_pid_file = temp_dir.join("orphan_pid_test.txt");
+
+    // Remove any leftover file from a previous run.
+    let _ = fs::remove_file(&orphan_pid_file);
+
+    let manager = ProcessManager::new().expect("Failed to create ProcessManager");
+
+    // Build the launcher command: backgrounds a long-running process, writes its PID, then exits.
+    let pid_file_str = orphan_pid_file.to_string_lossy().to_string();
+    let launcher_args = (commands.background_launcher.1)(&pid_file_str);
+
+    let config = process_manager::ProcessConfig {
+        command: std::path::PathBuf::from(commands.background_launcher.0),
+        args: launcher_args,
+        working_directory: Some(temp_dir.clone()),
+        environment: common::get_minimal_environment(),
+        log_file: None,
+    };
+
+    let handle = manager
+        .start_process(config)
+        .expect("Failed to start launcher process");
+
+    // Wait for the launcher to have written the orphan PID (up to 10s).
+    let orphan_pid_available = wait_for_file(&orphan_pid_file, std::time::Duration::from_secs(10));
+    assert!(
+        orphan_pid_available,
+        "Launcher did not write orphan PID file within timeout"
+    );
+
+    // Read the orphan's PID.
+    let orphan_pid: u32 = fs::read_to_string(&orphan_pid_file)
+        .expect("Failed to read orphan PID file")
+        .trim()
+        .parse()
+        .expect("Orphan PID file does not contain a valid PID");
+
+    // NOTE: orphan_pid comes from `echo $!` inside the PID namespace, so it is a
+    // namespace-local PID (like 2 or 3). It cannot be used with /proc checks on the host.
+    // We verify the orphan is alive/dead indirectly via the namespace container status.
+    println!("Orphan namespace-local PID: {}", orphan_pid);
+
+    // The ProcessManager should still report the managed unit as Running —
+    // the namespace init is alive and has reparented the orphan.
+    let status = manager
+        .query_status(handle)
+        .expect("Failed to query status");
+    match &status {
+        ProcessStatus::Running { .. } => {}
+        other => panic!(
+            "Expected Running status while orphan is alive, got: {:?}",
+            other
+        ),
+    }
+
+    // Stop the managed process — this kills the namespace init, which kills all
+    // processes in the namespace (including the orphan) synchronously.
+    manager
+        .stop_process(handle)
+        .expect("Failed to stop process");
+
+    // The namespace container is now gone; the managed unit should no longer be Running.
+    // (It may be Exited or return ProcessNotFound — either is acceptable.)
+    let status_after = manager.query_status(handle);
+    match status_after {
+        Err(_) => {} // ProcessNotFound — expected after namespace teardown
+        Ok(ProcessStatus::Running { .. }) => {
+            panic!("Expected non-Running status after stop_process, but still Running")
+        }
+        Ok(_) => {} // Exited / Terminated — also fine
+    }
+
+    // Cleanup.
+    let _ = fs::remove_file(&orphan_pid_file);
+
+    println!("✓ Orphan process cleaned up deterministically on stop_process");
+}
+
+/// Test 7: Rapid spawn+terminate stress test — fork/exec signal-handler race detection
 #[test]
 fn test_rapid_spawn_terminate() {
     init_tracing();

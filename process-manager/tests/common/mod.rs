@@ -21,6 +21,10 @@ pub struct PlatformCommands {
     pub env_list: (&'static str, Vec<&'static str>),
     /// Command that prints working directory
     pub pwd: (&'static str, Vec<&'static str>),
+    /// (command, args_fn) where args_fn(orphan_pid_file) returns args.
+    /// The command backgrounds a long-running process, writes its PID to orphan_pid_file, then exits.
+    #[cfg(target_os = "linux")]
+    pub background_launcher: (&'static str, fn(&str) -> Vec<String>),
 }
 
 impl PlatformCommands {
@@ -63,6 +67,12 @@ impl PlatformCommands {
                 ),
                 env_list: ("/usr/bin/env", vec![]),
                 pwd: ("/bin/pwd", vec![]),
+                background_launcher: ("/bin/sh", |pid_file| {
+                    vec![
+                        "-c".to_string(),
+                        format!("/bin/sleep 3600 & echo $! > {}", pid_file),
+                    ]
+                }),
             }
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]

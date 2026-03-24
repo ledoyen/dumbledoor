@@ -91,23 +91,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cross-cargo-
 
-      - name: Check Linux target
-        run: cargo check --target x86_64-unknown-linux-gnu
+      - name: Lint Linux target
+        run: cargo clippy --all-targets --target x86_64-unknown-linux-gnu -- -D warnings
 
-      - name: Check Windows target
-        run: cargo check --target x86_64-pc-windows-msvc
+      - name: Lint Windows target
+        run: cargo clippy --all-targets --target x86_64-pc-windows-msvc -- -D warnings
 
-      - name: Check macOS target
-        run: cargo check --target aarch64-apple-darwin
+      - name: Lint macOS target
+        run: cargo clippy --all-targets --target aarch64-apple-darwin -- -D warnings
 
   test:
     name: Test Suite
     needs: [cross-compile-check]
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os:
-          #- ubuntu-latest  # Linux platform implementation is still a placeholder (PIDs are hardcoded)
+          - ubuntu-latest
           - macos-latest
           - windows-latest
         rust: [stable, beta]

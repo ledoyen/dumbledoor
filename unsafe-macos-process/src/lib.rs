@@ -39,7 +39,7 @@ pub enum UnsafeMacOSError {
 pub struct MacOSProcessConfig {
     /// Command to execute
     pub command: String,
-    /// Command line arguments (not including argv[0])
+    /// Command line arguments (not including argv\[0\])
     pub args: Vec<String>,
     /// Working directory (None = system root "/")
     pub working_directory: Option<String>,
