@@ -13,6 +13,7 @@ use std::time::Duration;
 use std::os::unix::net::{UnixListener, UnixStream};
 
 /// Messages sent between main process and reaper
+#[cfg(unix)]
 #[derive(Debug, Clone)]
 pub(crate) enum ReaperMessage {
     /// Register a process for monitoring
@@ -27,6 +28,7 @@ pub(crate) enum ReaperMessage {
     Shutdown,
 }
 
+#[cfg(unix)]
 impl ReaperMessage {
     /// Serialize message to string for IPC
     pub(crate) fn serialize(&self) -> String {
@@ -116,6 +118,7 @@ impl ReaperChannel {
 /// Monitor for managing the reaper process lifecycle
 pub struct ReaperMonitor {
     reaper_pid: u32,
+    #[cfg(unix)]
     communication_channel: Option<ReaperChannel>,
     monitor_thread: Option<JoinHandle<()>>,
     reaper_child: Option<Child>,
@@ -142,7 +145,11 @@ impl ReaperMonitor {
         #[cfg(target_os = "linux")]
         let process_group = unsafe_linux_process::safe_get_process_group();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        tracing::info!("Parent PID: {}, Process Group: {}", parent_pid, process_group);
+        tracing::info!(
+            "Parent PID: {}, Process Group: {}",
+            parent_pid,
+            process_group
+        );
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         tracing::info!("Parent PID: {}", parent_pid);
 
@@ -489,7 +496,10 @@ impl ReaperMonitor {
         }
 
         // Close communication channel
-        self.communication_channel = None;
+        #[cfg(unix)]
+        {
+            self.communication_channel = None;
+        }
 
         Ok(())
     }
@@ -507,6 +517,7 @@ impl Drop for ReaperMonitor {
 /// The reaper process itself (separate executable)
 pub struct ProcessReaper {
     monitored_processes: Arc<Mutex<HashSet<u32>>>,
+    #[cfg(unix)]
     communication_channel: Option<ReaperChannel>,
     running: Arc<Mutex<bool>>,
 }
@@ -522,6 +533,7 @@ impl ProcessReaper {
     pub fn new() -> Self {
         Self {
             monitored_processes: Arc::new(Mutex::new(HashSet::new())),
+            #[cfg(unix)]
             communication_channel: None,
             running: Arc::new(Mutex::new(true)),
         }
@@ -636,10 +648,7 @@ impl ProcessReaper {
                             tracing::info!("Cleaning up {} registered processes", processes.len());
 
                             for pid in processes {
-                                tracing::info!(
-                                    "Kill-9 proof cleanup: terminating process {}",
-                                    pid
-                                );
+                                tracing::info!("Kill-9 proof cleanup: terminating process {}", pid);
                                 if Self::is_process_alive(pid) {
                                     Self::force_kill_process(pid);
                                 }
@@ -708,6 +717,7 @@ impl ProcessReaper {
     }
 
     /// Handle incoming messages
+    #[cfg(unix)]
     fn handle_message(&mut self, message: ReaperMessage) -> Result<(), ReaperError> {
         tracing::trace!("Reaper received message: {:?}", message);
         match message {
@@ -764,11 +774,11 @@ impl ProcessReaper {
     fn is_process_alive(pid: u32) -> bool {
         #[cfg(target_os = "macos")]
         {
-            return unsafe_macos_process::safe_is_process_alive(pid);
+            unsafe_macos_process::safe_is_process_alive(pid)
         }
         #[cfg(target_os = "linux")]
         {
-            return unsafe_linux_process::safe_is_process_alive(pid);
+            unsafe_linux_process::safe_is_process_alive(pid)
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
@@ -778,6 +788,7 @@ impl ProcessReaper {
     }
 
     /// Force kill a process (SIGKILL on Unix)
+    #[cfg(unix)]
     fn force_kill_process(pid: u32) {
         #[cfg(target_os = "macos")]
         {

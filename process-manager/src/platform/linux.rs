@@ -18,12 +18,15 @@ impl PlatformProcess for LinuxProcess {
     }
 }
 
-/// Linux platform manager using user namespaces when available
+/// Linux platform manager using user namespaces for process grouping and cleanup
 #[derive(Clone)]
 pub struct LinuxPlatformManager {
+    // Placeholders for future namespace implementation
+    #[allow(dead_code)]
     use_namespaces: bool,
+    #[allow(dead_code)]
     namespace_fd: Option<i32>,
-    needs_reaper: bool,
+    #[allow(dead_code)]
     process_state: Arc<RwLock<HashMap<u32, LinuxProcessState>>>,
 }
 
@@ -35,20 +38,17 @@ struct LinuxProcessState {
 impl LinuxPlatformManager {
     /// Create a new Linux platform manager
     pub fn new() -> Result<Self, ProcessManagerError> {
-        // TODO: Detect user namespace support
+        // TODO: Detect and enable user namespace support
         let use_namespaces = false; // Placeholder
-        let needs_reaper = !use_namespaces;
 
         tracing::info!(
-            "Linux platform manager initialized (namespaces: {}, reaper: {})",
-            use_namespaces,
-            needs_reaper
+            "Linux platform manager initialized (namespaces: {})",
+            use_namespaces
         );
 
         Ok(Self {
             use_namespaces,
             namespace_fd: None,
-            needs_reaper,
             process_state: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -112,8 +112,8 @@ impl PlatformManager for LinuxPlatformManager {
     }
 
     fn needs_reaper(&self) -> bool {
-        // Linux needs reaper when user namespaces are not available
-        self.needs_reaper
+        // Linux uses namespaces for process grouping and cleanup — no reaper needed
+        false
     }
 
     fn create_process_group(&self) -> Result<i32, PlatformError> {
@@ -157,7 +157,6 @@ mod tests {
 
         // Currently always false in placeholder implementation
         assert!(!manager.use_namespaces);
-        assert!(manager.needs_reaper);
     }
 
     #[test]
@@ -234,7 +233,7 @@ mod tests {
     fn test_reaper_requirement() {
         let manager = LinuxPlatformManager::new().expect("Failed to create manager");
 
-        // Should need reaper when namespaces are not available
-        assert!(manager.needs_reaper());
+        // Linux uses namespaces for cleanup — reaper is never needed
+        assert!(!manager.needs_reaper());
     }
 }

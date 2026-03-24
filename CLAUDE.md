@@ -25,16 +25,25 @@ Each platform module is conditionally compiled.
 
 **This project targets Linux, macOS, and Windows. Every change MUST compile on all three.**
 
-Before considering any change complete, run:
+Before considering any change complete, run **all four** of these in order:
 ```sh
+just format
+just lint
+just test
 just check-cross
 ```
 
-This cross-compiles for all three targets. It does NOT run tests (that requires the native platform), but it catches:
-- Missing `#[cfg(...)]` guards
-- Broken imports or type mismatches on other platforms
-- Incomplete match arms for platform-specific enums
-- Stub/trait inconsistencies
+* `just format` — applies rustfmt. Always run first, never manually reformat.
+* `just lint` — runs Clippy with `-D warnings`. All warnings are errors.
+* `just test` — runs the full test suite on the current platform (unit + e2e + doc). `just test-e2e` can also be run standalone; it builds the reaper binary first, which is required for macOS e2e tests.
+* `just check-cross` — cross-compiles **and lints** all three targets. `just lint` only runs on the current platform, so platform-specific dead code or warnings (e.g. unused fields on Linux or Windows) are only visible via cross-linting. Catches:
+  - Missing `#[cfg(...)]` guards
+  - Broken imports or type mismatches on other platforms
+  - Incomplete match arms for platform-specific enums
+  - Stub/trait inconsistencies
+  - Dead code in platform-specific modules
+
+**A change is not complete until all four pass with zero errors.**
 
 ### When modifying platform-specific code
 
@@ -54,8 +63,6 @@ This cross-compiles for all three targets. It does NOT run tests (that requires 
 ```sh
 just build          # Build all targets
 just test           # Run all tests (current platform only)
-just test-unit      # Unit tests only
-just test-e2e       # E2E integration tests only
 just lint           # Clippy with strict warnings
 just check-format   # Verify formatting
 just ci             # Full CI locally (format + lint + test + audit)

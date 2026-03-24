@@ -74,7 +74,9 @@ test-doc:
     cargo test --verbose --doc
 
 # Run E2E tests (cross-platform process lifecycle tests)
+# Builds reaper binary first — required by macOS e2e tests for process cleanup
 test-e2e:
+    cargo build -p process-manager --features binary-deps
     cargo test --verbose --test e2e_test
 
 # Run unit tests only
@@ -85,16 +87,21 @@ test-unit:
 test-all: test-unit test-e2e test-doc
 
 # Cross-compile check for all supported platforms (catches platform-specific breakage)
+# Also runs Clippy per target so dead code and warnings in platform-specific code
+# are caught locally, not just in CI on the native platform runner.
 check-cross:
     @echo "Checking native platform..."
     cargo check --all-targets
     @echo "Checking x86_64-unknown-linux-gnu..."
-    cargo check --target x86_64-unknown-linux-gnu
+    cargo check --all-targets --target x86_64-unknown-linux-gnu
+    cargo clippy --all-targets --target x86_64-unknown-linux-gnu -- -D warnings
     @echo "Checking x86_64-pc-windows-msvc..."
-    cargo check --target x86_64-pc-windows-msvc
+    cargo check --all-targets --target x86_64-pc-windows-msvc
+    cargo clippy --all-targets --target x86_64-pc-windows-msvc -- -D warnings
     @echo "Checking aarch64-apple-darwin..."
-    cargo check --target aarch64-apple-darwin
-    @echo "All platforms compile successfully!"
+    cargo check --all-targets --target aarch64-apple-darwin
+    cargo clippy --all-targets --target aarch64-apple-darwin -- -D warnings
+    @echo "All platforms compile and lint successfully!"
 
 # Check MSRV compatibility
 check-msrv:

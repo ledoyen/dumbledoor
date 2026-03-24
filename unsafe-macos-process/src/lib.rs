@@ -183,10 +183,31 @@ pub fn safe_spawn_process(
         None
     };
 
+    // Block signals before fork so the child cannot receive them before it has
+    // reset its signal handlers to SIG_DFL.  Without this, a parent that calls
+    // terminate_process() immediately after fork() can deliver SIGTERM to the
+    // child while it still has the parent's inherited handler, causing the child
+    // to kill the entire process group before exec() resets dispositions.
+    let signals_to_block = unsafe {
+        let mut set = std::mem::zeroed::<libc::sigset_t>();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, libc::SIGTERM);
+        libc::sigaddset(&mut set, libc::SIGINT);
+        libc::sigaddset(&mut set, libc::SIGHUP);
+        set
+    };
+    unsafe {
+        libc::sigprocmask(libc::SIG_BLOCK, &signals_to_block, std::ptr::null_mut());
+    }
+
     // Fork the process
     let pid = unsafe { libc::fork() };
 
     if pid == -1 {
+        // Unblock on error path
+        unsafe {
+            libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_block, std::ptr::null_mut());
+        }
         let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
         return Err(UnsafeMacOSError::SystemCallFailed {
             syscall: "fork".to_string(),
@@ -195,7 +216,8 @@ pub fn safe_spawn_process(
     }
 
     if pid == 0 {
-        // Child process - set up environment and exec
+        // Child process: reset handlers then unblock before exec.
+        // setup_child_process() resets handlers and unblocks as its first action.
         let result = setup_child_process(
             &command_cstring,
             &args_cstrings,
@@ -214,7 +236,11 @@ pub fn safe_spawn_process(
             }
         }
     } else {
-        // Parent process
+        // Parent: unblock signals now that fork is complete
+        unsafe {
+            libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_block, std::ptr::null_mut());
+        }
+
         let child_pid = pid as u32;
         let start_time = SystemTime::now();
 
@@ -242,6 +268,18 @@ fn setup_child_process(
     // Keep the child in the same process group as the parent for proper cleanup
     // This ensures that when the parent ProcessManager terminates, all children
     // in the same process group will be terminated as well
+
+    // Reset signal handlers to SIG_DFL and unblock signals.
+    // Signals were blocked in the parent before fork() to prevent delivery
+    // before this reset runs. Now restore default dispositions and unblock.
+    unsafe {
+        libc::signal(libc::SIGTERM, libc::SIG_DFL);
+        libc::signal(libc::SIGINT, libc::SIG_DFL);
+        libc::signal(libc::SIGHUP, libc::SIG_DFL);
+        let mut empty_set = std::mem::zeroed::<libc::sigset_t>();
+        libc::sigemptyset(&mut empty_set);
+        libc::sigprocmask(libc::SIG_SETMASK, &empty_set, std::ptr::null_mut());
+    }
 
     // Set working directory
     if let Some(wd) = working_dir {

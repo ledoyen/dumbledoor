@@ -454,6 +454,8 @@ fn test_sigkill_cleanup_guarantee() {
             let _ = victim_process.kill();
         }
     }
+    // Reap the zombie immediately so the reaper can detect parent death via kill(pid, 0)
+    let _ = victim_process.wait();
 
     // Wait for platform-specific cleanup to complete
     let cleanup_timeout = get_cleanup_timeout();
@@ -506,6 +508,33 @@ fn test_sigkill_cleanup_guarantee() {
     let _ = fs::remove_file(&pid_file);
     let _ = fs::remove_file(&ready_file);
     let _ = victim_process.wait();
+}
+
+/// Test 6: Rapid spawn+terminate stress test
+///
+/// Spawns and immediately terminates processes in a tight loop with no sleep.
+/// This reliably triggers fork/exec signal-handler race conditions that only
+/// appear on loaded systems (CI) when run just once — repeating many times
+/// exposes the race even on a fast local machine.
+#[test]
+fn test_rapid_spawn_terminate() {
+    init_tracing();
+
+    let manager = ProcessManager::new().expect("Failed to create ProcessManager");
+
+    for i in 0..50 {
+        let config = create_quick_config();
+        let handle = manager
+            .start_process(config)
+            .unwrap_or_else(|e| panic!("Iteration {}: failed to start process: {}", i, e));
+
+        // Terminate immediately with no sleep — maximises the fork/exec race window
+        manager
+            .stop_process(handle)
+            .unwrap_or_else(|e| panic!("Iteration {}: failed to stop process: {}", i, e));
+    }
+
+    println!("✓ 50 rapid spawn+terminate cycles completed without signal cascade");
 }
 
 // Helper functions for SIGKILL test
